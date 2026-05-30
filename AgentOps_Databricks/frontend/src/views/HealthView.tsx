@@ -1,0 +1,310 @@
+import { useEffect, useState } from 'react'
+import {
+  Area,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import { Card } from '@/components/ui/Card'
+import { DataLoadingState } from '@/components/ui/DataLoadingState'
+import { Badge } from '@/components/ui/Badge'
+import { useWorkspaceSelection } from '@/context/WorkspaceSelectionContext'
+import type { AgentSummary, CostSummaryResponse, HealthSloResponse, HealthTimeseriesResponse } from '@/lib/api'
+import { fetchAgents, fetchCostSummary, fetchHealthSlo, fetchHealthTimeseries } from '@/lib/api'
+import { TIME_RANGE_OPTIONS, type TimeRangeHours } from '@/lib/timeRange'
+
+function shortBucket(iso: string) {
+  try {
+    const d = new Date(iso)
+    return `${d.getUTCMonth() + 1}/${d.getUTCDate()} ${String(d.getUTCHours()).padStart(2, '0')}:00`
+  } catch {
+    return iso.slice(5, 16)
+  }
+}
+
+const axisProps = {
+  stroke: 'var(--color-muted)',
+  tick: { fill: 'var(--color-muted)', fontSize: 10 },
+}
+
+export function HealthView({ refreshToken = 0 }: { refreshToken?: number }) {
+  const { agents: scopeAgents } = useWorkspaceSelection()
+  const [agentList, setAgentList] = useState<AgentSummary[]>([])
+  const [ts, setTs] = useState<HealthTimeseriesResponse | null>(null)
+  const [slo, setSlo] = useState<HealthSloResponse | null>(null)
+  const [cost, setCost] = useState<CostSummaryResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [hours, setHours] = useState<TimeRangeHours>(168)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    ;(async () => {
+      try {
+        const [a, t, s, c] = await Promise.all([
+          fetchAgents(),
+          fetchHealthTimeseries(hours, { agents: scopeAgents.length ? scopeAgents : null }),
+          fetchHealthSlo(2000, 1, { agents: scopeAgents.length ? scopeAgents : null }),
+          fetchCostSummary(hours, { agents: scopeAgents.length ? scopeAgents : null }),
+        ])
+        if (!cancelled) {
+          setAgentList(a)
+          setTs(t)
+          setSlo(s)
+          setCost(c)
+          setError(null)
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [scopeAgents.join('\0'), hours, refreshToken])
+
+  const tsErr = ts?.error
+  const sloErr = slo?.error
+  const chartData =
+    ts?.buckets.map((b) => ({
+      label: shortBucket(b.bucket),
+      requests: b.requests,
+      errors: b.errors,
+    })) ?? []
+
+  return (
+    <div className="space-y-6 p-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-xs text-[var(--color-muted)]" htmlFor="health-hours">
+          Time range
+        </label>
+        <select
+          id="health-hours"
+          value={hours}
+          onChange={(e) => setHours(Number(e.target.value) as TimeRangeHours)}
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs"
+        >
+          {TIME_RANGE_OPTIONS.map((o) => (
+            <option key={o.hours} value={o.hours}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {error ? (
+        <p className="text-sm text-[var(--color-danger)]">{error}</p>
+      ) : null}
+      {(tsErr || sloErr) && !error ? (
+        <p className="text-sm text-[var(--color-warn-fg)]">
+          {tsErr || sloErr}
+        </p>
+      ) : null}
+
+      <DataLoadingState loading={loading} label="Loading health metrics…">
+      {cost?.billing && !cost.billing.error && cost.billing.total_list_usd != null ? (
+        <Card title="Model serving spend (list price)">
+          <div className="text-2xl font-semibold tabular-nums text-[var(--color-fg)]">
+            {cost.billing.currency_code} {cost.billing.total_list_usd.toFixed(4)}
+          </div>
+          <div className="mt-1 text-xs text-[var(--color-muted)]">
+            {cost.billing.total_dbu != null ? `${cost.billing.total_dbu.toFixed(6)} DBU` : ''} · from system.billing
+            (DBU × list price) — separate from token estimate below
+          </div>
+          {cost.billing.total_list_usd === 0 &&
+          cost.billing.workspace_reference &&
+          (cost.billing.workspace_reference.total_list_usd ?? 0) > 0 ? (
+            <p className="mt-2 text-xs text-[var(--color-teal)]">
+              Workspace (unscoped filter):{' '}
+              <span className="font-semibold tabular-nums">
+                {cost.billing.workspace_reference.currency_code ?? cost.billing.currency_code}{' '}
+                {(cost.billing.workspace_reference.total_list_usd ?? 0).toFixed(4)}
+              </span>
+              {cost.billing.workspace_reference.total_dbu != null &&
+              (cost.billing.workspace_reference.total_dbu ?? 0) > 0 ? (
+                <>
+                  {' '}
+                  · {(cost.billing.workspace_reference.total_dbu ?? 0).toFixed(6)} DBU
+                </>
+              ) : null}
+              . Scoped billing had no matching rows; this is the same window without endpoint filter.
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {cost?.ai_gateway && !cost.ai_gateway.error ? (
+        <Card title="AI Gateway tokens">
+          <div className="flex flex-wrap gap-6 text-sm">
+            <div>
+              <div className="text-[11px] font-semibold uppercase text-[var(--color-muted)]">Total tokens</div>
+              <div className="text-2xl font-semibold tabular-nums text-[var(--color-fg)]">
+                {(cost.ai_gateway.total_tokens ?? 0).toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase text-[var(--color-muted)]">Requests</div>
+              <div className="text-2xl font-semibold tabular-nums text-[var(--color-muted)]">
+                {(cost.ai_gateway.total_requests ?? 0).toLocaleString()}
+              </div>
+            </div>
+            {cost.token_cost_estimate?.estimated_usd != null ? (
+              <div>
+                <div className="text-[11px] font-semibold uppercase text-[var(--color-muted)]">
+                  Est. @ ${cost.token_cost_estimate.usd_per_1m_tokens ?? 0.7}/1M tokens
+                </div>
+                <div className="text-2xl font-semibold tabular-nums text-[var(--color-teal)]">
+                  USD {cost.token_cost_estimate.estimated_usd.toFixed(4)}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          {cost.token_cost_estimate?.estimated_usd != null ? (
+            <p className="mt-2 text-[11px] text-[var(--color-muted)]">
+              tokens × (${cost.token_cost_estimate.usd_per_1m_tokens ?? 0.7} / 1,000,000) — same as model compare
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card
+          title="SLO monitor"
+          subtitle="24h: p95 target 2000 ms · error budget 1% per model/route"
+        >
+          {slo ? (
+            <ul className="space-y-3 text-sm text-[var(--color-muted)]">
+              <li className="flex items-center justify-between gap-3">
+                <span title="95th percentile response time across requests">Global p95 latency</span>
+                <span className="tabular-nums font-medium text-[var(--color-fg)]">
+                  {slo.global_p95_ms != null ? `${Math.round(slo.global_p95_ms).toLocaleString()} ms` : '—'}
+                </span>
+              </li>
+              <li className="flex items-center justify-between gap-3">
+                <span title="Share of requests with HTTP ≥400">Global error rate</span>
+                <span className="tabular-nums font-medium text-[var(--color-fg)]">
+                  {slo.global_error_rate_pct != null ? `${slo.global_error_rate_pct.toFixed(2)}%` : '—'}
+                </span>
+              </li>
+              <li className="flex items-center justify-between gap-3">
+                <span title="Models/routes slower than p95 target">Segments breaching p95</span>
+                <Badge tone={slo.agents_breaching_p95 > 0 ? 'warn' : 'teal'}>
+                  {slo.agents_breaching_p95.toString()}
+                </Badge>
+              </li>
+              <li className="flex items-center justify-between gap-3">
+                <span title="Models/routes above 1% errors">Segments over error budget</span>
+                <Badge tone={slo.agents_over_error_budget > 0 ? 'warn' : 'teal'}>
+                  {slo.agents_over_error_budget.toString()}
+                </Badge>
+              </li>
+            </ul>
+          ) : (
+            <p className="text-sm text-[var(--color-muted)]">No SLO data.</p>
+          )}
+          {slo?.note ? (
+            <p className="mt-3 text-[11px] text-[var(--color-muted)]">{String(slo.note)}</p>
+          ) : null}
+        </Card>
+
+        <Card title="Request volume" className="lg:col-span-2">
+          {chartData.length === 0 ? (
+            <p className="text-sm text-[var(--color-muted)]">
+              No time buckets yet — generate traffic and refresh.
+            </p>
+          ) : (
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.6} />
+                  <XAxis dataKey="label" {...axisProps} interval="preserveStartEnd" minTickGap={24} />
+                  <YAxis yAxisId="l" {...axisProps} allowDecimals={false} width={36} />
+                  <YAxis yAxisId="r" orientation="right" {...axisProps} allowDecimals={false} width={36} />
+                  <Tooltip
+                    contentStyle={{
+                      background: 'var(--color-surface-elevated)',
+                      border: '1px solid var(--color-border)',
+                      borderRadius: 8,
+                      color: 'var(--color-fg)',
+                      fontSize: 12,
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Area
+                    yAxisId="l"
+                    type="monotone"
+                    dataKey="requests"
+                    name="Requests"
+                    stroke="var(--color-teal)"
+                    fill="var(--color-teal-soft)"
+                    strokeWidth={2}
+                  />
+                  <Line
+                    yAxisId="r"
+                    type="monotone"
+                    dataKey="errors"
+                    name="Errors"
+                    stroke="var(--color-accent)"
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                  />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <Card title="Agent drill-down">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+              <tr>
+                <th className="pb-3 pr-4">Agent</th>
+                <th className="pb-3 pr-4">Status</th>
+                <th className="pb-3 pr-4">RPM</th>
+                <th className="pb-3 pr-4">p95</th>
+                <th className="pb-3">Errors</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              {agentList.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center text-[var(--color-muted)]">
+                    No agent rows — check Overview wiring.
+                  </td>
+                </tr>
+              ) : (
+                agentList.map((a) => (
+                  <tr key={a.id}>
+                    <td className="py-3 pr-4 font-medium text-[var(--color-fg)]">{a.name}</td>
+                    <td className="py-3 pr-4">
+                      <Badge tone={a.status === 'healthy' ? 'teal' : 'warn'}>{a.status}</Badge>
+                    </td>
+                    <td className="py-3 pr-4 tabular-nums text-[var(--color-muted)]">
+                      {a.rpm < 0.01 ? a.rpm.toFixed(4) : a.rpm.toFixed(2)}
+                    </td>
+                    <td className="py-3 pr-4 tabular-nums text-[var(--color-muted)]">
+                      {a.p95_latency_ms.toLocaleString()} ms
+                    </td>
+                    <td className="py-3 tabular-nums text-[var(--color-muted)]">
+                      {a.error_rate_pct.toFixed(2)}%
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      </DataLoadingState>
+    </div>
+  )
+}

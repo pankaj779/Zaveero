@@ -1,0 +1,151 @@
+# DataWhisper stack.
+#
+# Default profile  (dev):  postgres + backend + frontend
+#     docker compose up --build
+#
+# `queue` profile  (prod): adds redis + arq worker for durable background jobs
+#     docker compose --profile queue up --build
+#
+# Without the queue profile the backend uses FastAPI BackgroundTasks for crawls
+# — exactly the same behaviour you had before the queue was introduced.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: datawhisper
+      POSTGRES_PASSWORD: datawhisper_secret
+      POSTGRES_DB: datawhisper
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datawhisper -d datawhisper"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Optional: only started when you opt in with `--profile queue`. Without it the
+  # backend falls back to FastAPI BackgroundTasks (in-process crawls). Turn this on
+  # in production for arq-backed durable jobs + horizontal worker scale.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    ports:
+      - "6379:6379"
+    profiles: ["queue"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    # Merge env files into the container (vars not overridden below). Use `infra/.env` and/or `backend/.env`
+    # (saved on disk). `.env` alone is often empty if never saved; backend/.env is the usual dev location.
+    env_file:
+      - path: .env
+        required: false
+      - path: ../backend/.env
+        required: false
+    # Lets the API container reach databases running on your PC (MySQL, etc.), not only other compose services.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Superuser URL for Prisma migrations (CREATE TABLE, ALTER, etc.)
+      MIGRATION_DATABASE_URL: postgresql://datawhisper:datawhisper_secret@postgres:5432/datawhisper
+      # Non-superuser URL for the running app — RLS policies are enforced on this role
+      DATABASE_URL: postgresql://datawhisper_app:datawhisper_app_secret@postgres:5432/datawhisper
+      # When set, /crawler enqueues jobs onto Redis (worker handles them). Empty -> in-process BackgroundTasks.
+      # Default is empty so plain `docker compose up` works without the redis service.
+      # To enable: `docker compose --profile queue up --build` (and the line below picks up the right URL).
+      REDIS_URL: ${REDIS_URL:-}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-long-random-string}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      CORS_ORIGINS: http://localhost:3001,http://127.0.0.1:3001
+      ZAAVERO_API_URL: http://host.docker.internal:8000
+      CRON_SECRET: ${CRON_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    volumes:
+      - crawler_tmp:/tmp/datawhisper_crawl
+    ports:
+      - "8002:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Optional: only started when you opt in with `--profile queue`. See `redis` above.
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+      - path: ../backend/.env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: postgresql://datawhisper_app:datawhisper_app_secret@postgres:5432/datawhisper
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-long-random-string}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ARQ_MAX_JOBS: ${ARQ_MAX_JOBS:-4}
+    entrypoint: ["python", "-m", "app.worker"]
+    volumes:
+      - crawler_tmp:/tmp/datawhisper_crawl
+    restart: unless-stopped
+    profiles: ["queue"]
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8002
+    environment:
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-change-me-nextauth-secret-min-32-chars}
+      # Browser → host-mapped API
+      NEXT_PUBLIC_API_URL: http://localhost:8002
+      # Next.js server (inside container) → backend service
+      INTERNAL_API_URL: http://backend:8000
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  crawler_tmp:

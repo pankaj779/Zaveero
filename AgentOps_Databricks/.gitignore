@@ -1,0 +1,16 @@
+.env
+backend/replay_targets.json
+backend/agentops_app_config.db
+.env.*.local
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+dist/
+*.egg-info/
+.DS_Store
+Thumbs.db

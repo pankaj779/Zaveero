@@ -1,0 +1,50 @@
+# Secrets — never commit
+.env
+.env.local
+.env.development.local
+.env.production
+.env.production.local
+**/.env
+!**/.env.example
+!**/.env.production.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Databases / local state
+*.db
+*.sqlite
+**/agentops_app_config.db
+**/replay_targets.json
+
+# IDE / OS
+.idea/
+.vscode/
+.cursor/
+.DS_Store
+Thumbs.db
+
+# Docker / infra local
+**/postgres_data/
+
+# Logs
+*.log
+
+# Prisma generated (regenerate in CI)
+# Keep schema; ignore local query engine cache if any
+
+# Assets from chat (optional)
+assets/

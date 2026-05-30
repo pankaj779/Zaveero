@@ -1,0 +1,65 @@
+# Render Blueprint — deploy all three APIs from one repo
+# Docs: https://render.com/docs/blueprint-spec
+#
+# After connecting GitHub, set secret env vars in Render dashboard:
+#   zaavero-api: DATABASE_URL, JWT_SECRET
+#   datawhisper-api: DATABASE_URL, JWT_SECRET, OPENAI_API_KEY (optional)
+#   agentops-api: JWT_SECRET
+
+services:
+  - type: web
+    name: zaavero-api
+    runtime: docker
+    rootDir: Zaavero/backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: SEED_CATALOG
+        value: "1"
+      - key: CORS_ORIGINS
+        value: https://zaavero.com,https://www.zaavero.com
+      - key: AGENTOPS_LAUNCH_URL
+        value: https://agentops.zaavero.com/sso/zaavero
+      - key: DATAWHISPER_LAUNCH_URL
+        value: https://datawhisper.zaavero.com/sso/zaavero
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
+  - type: web
+    name: agentops-api
+    runtime: docker
+    rootDir: AgentOps_Databricks/backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: ZAAVERO_API_URL
+        value: https://api.zaavero.com
+      - key: CORS_ORIGINS
+        value: https://agentops.zaavero.com
+      - key: JWT_SECRET
+        sync: false
+
+  - type: web
+    name: datawhisper-api
+    runtime: docker
+    rootDir: AI Data Analyst for Databases/backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ZAAVERO_API_URL
+        value: https://api.zaavero.com
+      - key: CORS_ORIGINS
+        value: https://datawhisper.zaavero.com
+      - key: SKIP_RLS_SETUP
+        value: "1"
+      - key: DATABASE_URL
+        sync: false
+      - key: MIGRATION_DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false

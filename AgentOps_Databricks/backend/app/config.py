@@ -1,0 +1,171 @@
+"""Environment-driven settings. Secrets only via env / Databricks secrets — never committed."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# backend/ (parent of app/) — .env and replay_targets.json live here
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=str(BACKEND_ROOT / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    databricks_host: str = Field(
+        default="",
+        validation_alias=AliasChoices("DATABRICKS_HOST", "DATABRICKS_SERVER_HOSTNAME"),
+        description="Workspace host without scheme, e.g. dbc-xxxx.cloud.databricks.com",
+    )
+    databricks_http_path: str = Field(
+        default="",
+        validation_alias=AliasChoices("DATABRICKS_HTTP_PATH"),
+        description="Warehouse HTTP path, e.g. /sql/1.0/warehouses/abc",
+    )
+    databricks_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("DATABRICKS_TOKEN", "DATABRICKS_PAT"),
+        description="PAT for SQL warehouse (Overview, Cost, Governance, traces, system tables).",
+    )
+    #: Optional separate PAT for HTTP replay/benchmark only; falls back to DATABRICKS_TOKEN if empty.
+    databricks_ai_gateway_token: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "DATABRICKS_AI_GATEWAY_TOKEN",
+            "AGENTOPS_AI_GATEWAY_TOKEN",
+        ),
+    )
+    workspace_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("DATABRICKS_WORKSPACE_ID", "WORKSPACE_ID"),
+    )
+
+    #: Optional fully qualified inference log table for aggregates (catalog.schema.table)
+    inference_table_fqn: str = Field(
+        default="",
+        validation_alias=AliasChoices("AGENTOPS_INFERENCE_TABLE", "INFERENCE_TABLE_FQN"),
+    )
+
+    #: Optional comma-separated FQNs — same schema across tables; queried as UNION ALL (one logical stream)
+    inference_tables_fqn: str = Field(
+        default="",
+        validation_alias=AliasChoices("AGENTOPS_INFERENCE_TABLES"),
+    )
+
+    #: Unity Catalog catalog.schema — discover payload tables automatically (optional table suffix filter)
+    inference_schema_fqn: str = Field(
+        default="",
+        validation_alias=AliasChoices("AGENTOPS_INFERENCE_SCHEMA"),
+    )
+
+    #: When using schema discovery: only include tables whose name ends with this suffix (empty = all base tables)
+    inference_table_name_suffix: str = Field(
+        default="_payload",
+        validation_alias=AliasChoices("AGENTOPS_INFERENCE_TABLE_SUFFIX"),
+    )
+
+    #: Explicit event-time column if auto-detect fails (must match Delta column name)
+    inference_time_column: str = Field(
+        default="",
+        validation_alias=AliasChoices("AGENTOPS_INFERENCE_TIME_COLUMN"),
+    )
+
+    #: Optional Delta column (logical name) — same value groups rows for cross-model compare
+    inference_comparison_group_column: str = Field(
+        default="comparison_group_id",
+        validation_alias=AliasChoices("AGENTOPS_COMPARISON_GROUP_COLUMN"),
+    )
+
+    #: JSON array of replay targets: [{"id":"a","label":"…","url":"https://…/v1/chat/completions","headers":{}}]
+    replay_targets_json: str = Field(
+        default="",
+        validation_alias=AliasChoices("AGENTOPS_REPLAY_TARGETS_JSON"),
+    )
+
+    #: Optional path to a UTF-8 JSON file (same array schema). Use when .env JSON is hard to escape on Windows.
+    replay_targets_file: str = Field(
+        default="",
+        validation_alias=AliasChoices("AGENTOPS_REPLAY_TARGETS_FILE"),
+    )
+
+    #: When true, POST /api/v1/benchmark/prompt can fan out a user prompt to replay targets (security-sensitive).
+    benchmark_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("AGENTOPS_BENCHMARK_ENABLED"),
+    )
+
+    #: Max replay targets per benchmark call (caps cost / blast radius).
+    benchmark_max_targets: int = Field(
+        default=6,
+        validation_alias=AliasChoices("AGENTOPS_BENCHMARK_MAX_TARGETS"),
+    )
+
+    #: Optional — only for emergency UI demos; keep **false** for real telemetry
+    use_demo_metrics: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("AGENTOPS_USE_DEMO_METRICS"),
+    )
+
+    #: Hide AgentOps replay/benchmark rows from trace lists unless user=agentops_dash_test_show
+    exclude_test_requests_from_analytics: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("AGENTOPS_EXCLUDE_TEST_REQUESTS"),
+    )
+
+    #: USD per 1M tokens for compare-table estimates (set AGENTOPS_COMPARE_USD_PER_1M_TOKENS=0.7 in .env)
+    compare_fallback_usd_per_1m_tokens: float = Field(
+        default=0.7,
+        validation_alias=AliasChoices("AGENTOPS_COMPARE_USD_PER_1M_TOKENS"),
+    )
+
+    gateway_aliases_file: str = Field(
+        default="gateway_aliases.json",
+        validation_alias=AliasChoices("AGENTOPS_GATEWAY_ALIASES_FILE"),
+    )
+
+    jwt_secret: str = Field(
+        default="change-me-agentops-jwt-secret",
+        validation_alias=AliasChoices("AGENTOPS_JWT_SECRET", "JWT_SECRET"),
+    )
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = Field(
+        default=60 * 24 * 7,
+        validation_alias=AliasChoices("AGENTOPS_ACCESS_TOKEN_MINUTES"),
+    )
+    zaavero_api_url: str = Field(
+        default="http://localhost:8000",
+        validation_alias=AliasChoices("ZAAVERO_API_URL", "ZAAVERO_PLATFORM_URL"),
+    )
+    cors_origins: str = Field(
+        default="",
+        validation_alias=AliasChoices("CORS_ORIGINS", "AGENTOPS_CORS_ORIGINS"),
+    )
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        defaults = [
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+            "http://127.0.0.1:5174",
+            "http://localhost:5174",
+            "http://127.0.0.1:4173",
+            "http://localhost:4173",
+        ]
+        extra = [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        return list(dict.fromkeys(defaults + extra))
+
+
+def get_settings() -> Settings:
+    """Fresh read from env / backend/.env; overridden per-request when a Databricks connection is active."""
+    from app.runtime_context import get_runtime_settings
+
+    override = get_runtime_settings()
+    if override is not None:
+        return override
+    return Settings()

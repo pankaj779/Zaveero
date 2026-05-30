@@ -1,0 +1,392 @@
+generator client {
+  provider  = "prisma-client-py"
+  interface = "asyncio"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workspace {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  /// When false, new users must be invited by an admin (slug join is disabled).
+  allowSelfServeJoin Boolean @default(true) @map("allow_self_serve_join")
+  /// Role assigned on self-serve join: ANALYST or VIEWER
+  defaultJoinRole    String   @default("ANALYST") @map("default_join_role")
+  /// When false, only ADMIN can add/test connections and run metadata scans.
+  analystsCanManageConnections Boolean @default(true) @map("analysts_can_manage_connections")
+
+  users             User[]
+  connections       DbConnection[]
+  histories         QueryHistory[]
+  savedReports      SavedReport[]
+  savedDashboards   SavedDashboard[]
+  auditLogs         AuditLog[]
+  reportSchedules   ReportSchedule[]
+  crawlSources      CrawlSource[]
+
+  @@map("workspaces")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  /// ADMIN | ANALYST | VIEWER (legacy USER treated as ANALYST in API)
+  role         String
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  histories       QueryHistory[]
+  usage           UserUsage?
+  savedReports    SavedReport[]
+  savedDashboards SavedDashboard[]
+  auditLogs       AuditLog[]
+
+  @@index([workspaceId])
+  @@map("users")
+}
+
+/// Per-user query operation counts (AI generate + execute) for workspace billing / limits.
+model UserUsage {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @unique @map("user_id") @db.Uuid
+  workspaceId        String   @map("workspace_id") @db.Uuid
+  totalAiGenerations Int      @default(0) @map("total_ai_generations")
+  totalExecutions    Int      @default(0) @map("total_executions")
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@map("user_usage")
+}
+
+model DbConnection {
+  id              String   @id @default(uuid()) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  name            String
+  type            String
+  encryptedConfig String   @map("encrypted_config")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  metadataVersions MetadataVersion[]
+  histories        QueryHistory[]
+  savedReports     SavedReport[]
+
+  @@unique([workspaceId, name], name: "workspace_connection_name")
+  @@index([workspaceId])
+  @@map("db_connections")
+}
+
+/// Immutable snapshot per scan: full `metadataJson` + lineage rows keyed by this version id.
+model MetadataVersion {
+  id                String   @id @default(uuid()) @db.Uuid
+  connectionId      String   @map("connection_id") @db.Uuid
+  version           Int
+  metadataJson      Json     @map("metadata_json")
+  lineageAdjacency  Json     @map("lineage_adjacency")
+  factTables        Json     @map("fact_tables")
+  dimensionTables   Json     @map("dimension_tables")
+  scannedAt         DateTime @default(now()) @map("scanned_at") @db.Timestamptz(6)
+
+  connection    DbConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  lineageEdges  LineageEdge[]
+  queryHistory  QueryHistory[]
+
+  @@unique([connectionId, version], name: "uq_connection_version")
+  @@index([connectionId])
+  @@map("metadata_versions")
+}
+
+model LineageEdge {
+  id                String @id @default(uuid()) @db.Uuid
+  metadataVersionId String @map("metadata_version_id") @db.Uuid
+  fromTable         String @map("from_table")
+  toTable           String @map("to_table")
+  fkColumn          String @map("fk_column")
+  referencedColumn  String @map("referenced_column")
+
+  metadataVersion MetadataVersion @relation(fields: [metadataVersionId], references: [id], onDelete: Cascade)
+
+  @@index([metadataVersionId])
+  @@map("lineage_edges")
+}
+
+model QueryHistory {
+  id                  String   @id @default(uuid()) @db.Uuid
+  workspaceId         String   @map("workspace_id") @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  connectionId        String   @map("connection_id") @db.Uuid
+  metadataVersionId   String?  @map("metadata_version_id") @db.Uuid
+  question            String
+  sqlText             String   @map("sql_text")
+  resultRowCount      Int      @map("result_row_count")
+  chartType           String?  @map("chart_type")
+  explanation         String?
+  confidenceScore     Float?   @map("confidence_score")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection       DbConnection     @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  metadataVersion  MetadataVersion? @relation(fields: [metadataVersionId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([userId])
+  @@index([metadataVersionId])
+  @@map("query_history")
+}
+
+model SavedReport {
+  id                  String   @id @default(uuid()) @db.Uuid
+  workspaceId         String   @map("workspace_id") @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  connectionId        String   @map("connection_id") @db.Uuid
+  name                String
+  question            String   @default("")
+  sqlText             String   @map("sql_text")
+  chartTypeHint       String?  @map("chart_type_hint")
+  sharedWithWorkspace Boolean  @default(false) @map("shared_with_workspace")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection  DbConnection   @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  schedules   ReportSchedule[]
+
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([connectionId])
+  @@map("saved_reports")
+}
+
+model ReportSchedule {
+  id          String    @id @default(uuid()) @db.Uuid
+  reportId    String    @map("report_id") @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  cronExpr   String    @map("cron_expr")
+  timezone   String    @default("UTC")
+  emailTo    String    @map("email_to")
+  enabled    Boolean   @default(true)
+  lastRunAt  DateTime? @map("last_run_at") @db.Timestamptz(6)
+  nextRunAt  DateTime? @map("next_run_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  report    SavedReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([workspaceId])
+  @@index([enabled, nextRunAt])
+  @@map("report_schedules")
+}
+
+model SavedDashboard {
+  id                  String   @id @default(uuid()) @db.Uuid
+  workspaceId         String   @map("workspace_id") @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  name                String
+  description         String   @default("")
+  /// Ordered list of SavedReport ids (JSON array of strings)
+  reportOrder         Json     @map("report_order")
+  sharedWithWorkspace Boolean  @default(false) @map("shared_with_workspace")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([userId])
+  @@map("saved_dashboards")
+}
+
+/// External data source for the Crawler (GitHub repo, S3 bucket, Airflow, etc.)
+/// Sub-crawls (e.g. a repo discovered inside another repo) link via parentCrawlSourceId.
+model CrawlSource {
+  id              String   @id @default(uuid()) @db.Uuid
+  workspaceId     String   @map("workspace_id") @db.Uuid
+  name            String
+  /// GITHUB | BITBUCKET | GITLAB | S3 | AIRFLOW | DBT_CLOUD | KAFKA | MONGODB | REST_API | CUSTOM
+  sourceType      String   @map("source_type")
+  /// Encrypted JSON: tokens, URLs, org names — same encryption as DbConnection
+  encryptedConfig String   @map("encrypted_config")
+  /// Status: PENDING_AUTH | READY | CRAWLING | DONE | ERROR
+  status          String   @default("READY")
+  lastCrawledAt   DateTime? @map("last_crawled_at") @db.Timestamptz(6)
+  /// Optional: parent CrawlSource (set when this source was auto-created from a discovered resource)
+  parentCrawlSourceId String? @map("parent_crawl_source_id") @db.Uuid
+  /// Optional: the DiscoveredResource that spawned this CrawlSource
+  originDiscoveryId   String? @map("origin_discovery_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sessions       CrawlSession[]
+  codeLineage    CodeLineageNode[]
+  symbolEdges    CodeSymbolEdge[]
+  discoveries    DiscoveredResource[] @relation("crawl_source_discoveries")
+
+  parent         CrawlSource?    @relation("crawl_source_tree", fields: [parentCrawlSourceId], references: [id])
+  children       CrawlSource[]   @relation("crawl_source_tree")
+
+  @@unique([workspaceId, name], name: "workspace_crawl_source_name")
+  @@index([workspaceId])
+  @@index([parentCrawlSourceId])
+  @@map("crawl_sources")
+}
+
+/// Resource discovered during a crawl (DB connection string, git URL, S3 bucket, API host, etc.).
+/// The UI uses `kind` + the connector-spec registry to ask the user for the right credentials.
+/// When the user provides credentials, a new CrawlSource or DbConnection is created and this row is RESOLVED.
+model DiscoveredResource {
+  id               String   @id @default(uuid()) @db.Uuid
+  workspaceId      String   @map("workspace_id") @db.Uuid
+  crawlSourceId    String   @map("crawl_source_id") @db.Uuid
+  /// Connector kind id from connector_specs.py (GIT_REPO, POSTGRES, MYSQL, S3, REST_API, ...)
+  kind             String
+  /// Normalised URI (no secrets) — used as the dedupe key per crawl source.
+  uri              String
+  /// Friendly label shown in the UI.
+  displayName      String   @map("display_name")
+  /// Structured detail used to prefill the credential prompt (e.g. parsed host/port/db).
+  detail           Json?
+  sourceFile       String?  @map("source_file")
+  sourceLine       Int?     @map("source_line")
+  /// PENDING_AUTH | CONNECTED | SKIPPED | FAILED
+  status           String   @default("PENDING_AUTH")
+  /// CrawlSource that was created when the user connected to this discovery (for recursive crawls).
+  childCrawlSourceId String? @map("child_crawl_source_id") @db.Uuid
+  /// DbConnection that was created when the user connected to this discovery.
+  childConnectionId  String? @map("child_connection_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  crawlSource CrawlSource @relation("crawl_source_discoveries", fields: [crawlSourceId], references: [id], onDelete: Cascade)
+
+  @@unique([crawlSourceId, uri], name: "uq_crawl_source_resource")
+  @@index([workspaceId])
+  @@index([crawlSourceId])
+  @@index([status])
+  @@map("discovered_resources")
+}
+
+/// One crawl run — tracks progress so retries resume, not restart
+model CrawlSession {
+  id              String   @id @default(uuid()) @db.Uuid
+  crawlSourceId   String   @map("crawl_source_id") @db.Uuid
+  /// RUNNING | PAUSED_NEEDS_CREDS | COMPLETED | FAILED
+  status          String   @default("RUNNING")
+  /// JSON: files scanned, errors, discovered resources needing credentials
+  progressJson    Json?    @map("progress_json")
+  filesScanned    Int      @default(0) @map("files_scanned")
+  edgesFound      Int      @default(0) @map("edges_found")
+  errorMessage    String?  @map("error_message")
+  startedAt       DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt     DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  crawlSource CrawlSource @relation(fields: [crawlSourceId], references: [id], onDelete: Cascade)
+
+  @@index([crawlSourceId])
+  @@map("crawl_sessions")
+}
+
+/// Lineage nodes discovered by the Crawler from code, SQL files, configs.
+/// Also used by the symbol graph: MODULE / CLASS / FUNCTION / METHOD nodes
+/// share this table — distinguished by `nodeType`. Containment (file→class→method)
+/// uses `parentNodeId`; cross-symbol relations (calls, imports, inheritance)
+/// live in `CodeSymbolEdge`.
+model CodeLineageNode {
+  id              String   @id @default(uuid()) @db.Uuid
+  crawlSourceId   String   @map("crawl_source_id") @db.Uuid
+  /// Data: TABLE_READ | TABLE_WRITE | COLUMN_TRANSFORM | PIPELINE_STEP | FILE_REF
+  /// Code: MODULE | CLASS | FUNCTION | METHOD | INTERFACE | TRAIT | ENUM
+  nodeType        String   @map("node_type")
+  /// Fully qualified: catalog.schema.table for data nodes; for code nodes a stable
+  /// symbol id like `<rel_path>::ClassName::method_name`.
+  nodeName        String   @map("node_name")
+  /// Where this was found: file path + line number
+  sourceFile      String?  @map("source_file")
+  sourceLine      Int?     @map("source_line")
+  /// JSON: extra context — column mappings, function args, language, decorators, etc.
+  metadata        Json?
+  /// For edges: where data comes FROM (null for root sources)
+  parentNodeId    String?  @map("parent_node_id") @db.Uuid
+  /// PRODUCTION | STAGING | DEV | UNKNOWN — environment classification
+  environment     String   @default("UNKNOWN")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  crawlSource CrawlSource      @relation(fields: [crawlSourceId], references: [id], onDelete: Cascade)
+  parentNode  CodeLineageNode?  @relation("lineage_tree", fields: [parentNodeId], references: [id])
+  children    CodeLineageNode[] @relation("lineage_tree")
+
+  /// Edges where this node is the source / target. Cross-symbol relationships
+  /// (calls, imports, inheritance, …) live here — distinct from `parent_node_id`
+  /// which models pure containment.
+  outgoingEdges CodeSymbolEdge[] @relation("symbol_edge_from")
+  incomingEdges CodeSymbolEdge[] @relation("symbol_edge_to")
+
+  @@index([crawlSourceId])
+  @@index([nodeName])
+  @@index([parentNodeId])
+  @@index([nodeType])
+  @@map("code_lineage_nodes")
+}
+
+/// Symbol-level relationship between two CodeLineageNodes — function calls,
+/// imports, class inheritance, interface implementation, etc. Resolved within
+/// the same CrawlSource (cross-repo resolution is future work).
+model CodeSymbolEdge {
+  id            String   @id @default(uuid()) @db.Uuid
+  crawlSourceId String   @map("crawl_source_id") @db.Uuid
+  fromNodeId    String   @map("from_node_id") @db.Uuid
+  toNodeId      String   @map("to_node_id") @db.Uuid
+  /// CALLS | IMPORTS | EXTENDS | IMPLEMENTS | INSTANTIATES | READS | WRITES | DECORATES | RETURNS
+  edgeType      String   @map("edge_type")
+  /// Optional location in source code where the edge originates (call site).
+  sourceFile    String?  @map("source_file")
+  sourceLine    Int?     @map("source_line")
+  /// Extra context: receiver expression, argument count, language, raw call string.
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  crawlSource CrawlSource     @relation(fields: [crawlSourceId], references: [id], onDelete: Cascade)
+  fromNode    CodeLineageNode @relation("symbol_edge_from", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode      CodeLineageNode @relation("symbol_edge_to",   fields: [toNodeId],   references: [id], onDelete: Cascade)
+
+  @@unique([fromNodeId, toNodeId, edgeType], name: "uq_symbol_edge")
+  @@index([crawlSourceId])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+  @@index([edgeType])
+  @@map("code_symbol_edges")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  action       String
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  detail       Json?
+  ipAddress    String?  @map("ip_address")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("audit_logs")
+}

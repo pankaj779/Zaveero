@@ -1,0 +1,257 @@
+generator client {
+  provider  = "prisma-client-py"
+  interface = "asyncio"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Platform core ───────────────────────────────────────────────────────────
+
+model Workspace {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  allowSelfServeJoin Boolean @default(true) @map("allow_self_serve_join")
+  defaultJoinRole    String  @default("ANALYST") @map("default_join_role")
+
+  members          User[]
+  billingAccount   BillingAccount?
+  subscriptions    Subscription[]
+  enabledProducts  WorkspaceProduct[]
+  featureOverrides WorkspaceFeatureFlag[]
+  activityLogs     ActivityLog[]
+
+  @@map("workspaces")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  name         String?
+  avatarUrl    String?  @map("avatar_url")
+  /// ADMIN | ANALYST | VIEWER
+  role         String
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  activityLogs ActivityLog[]
+
+  @@index([workspaceId])
+  @@map("users")
+}
+
+// ─── Product catalog & module framework ────────────────────────────────────
+
+model Product {
+  id               String   @id @default(uuid()) @db.Uuid
+  slug             String   @unique
+  name             String
+  tagline          String?
+  description      String
+  longDescription  String?  @map("long_description")
+  icon             String   @default("box")
+  category         String   @default("analytics")
+  /// ACTIVE | COMING_SOON | BETA | DEPRECATED
+  status           String   @default("ACTIVE")
+  /// Base URL for launching the product (env-specific)
+  launchUrl        String   @map("launch_url")
+  documentationUrl String?  @map("documentation_url")
+  /// Module registration metadata (routes, permissions, feature keys)
+  moduleConfig     Json     @default("{}") @map("module_config")
+  /// Included in base platform tier when true
+  isCore           Boolean  @default(false) @map("is_core")
+  /// Minimum plan slug required: free | starter | pro | enterprise
+  minPlanTier      String   @default("free") @map("min_plan_tier")
+  /// Monthly add-on price in cents (0 = included or free)
+  addonPriceCents  Int      @default(0) @map("addon_price_cents")
+  sortOrder        Int      @default(0) @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspaceProducts WorkspaceProduct[]
+  productFeatures   ProductFeatureFlag[]
+  subscriptionAddons SubscriptionProductAddon[]
+
+  @@map("products")
+}
+
+model WorkspaceProduct {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  /// ACTIVE | DISABLED | TRIAL | SUSPENDED
+  status      String   @default("ACTIVE")
+  enabledAt   DateTime @default(now()) @map("enabled_at") @db.Timestamptz(6)
+  enabledById String?  @map("enabled_by_id") @db.Uuid
+  /// Product-specific workspace configuration (API keys, instance URLs, etc.)
+  config      Json     @default("{}")
+  trialEndsAt DateTime? @map("trial_ends_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, productId], name: "uq_workspace_product")
+  @@index([workspaceId])
+  @@index([productId])
+  @@map("workspace_products")
+}
+
+// ─── Feature flags ───────────────────────────────────────────────────────────
+
+model FeatureFlag {
+  key         String  @id
+  description String
+  defaultOn   Boolean @default(false) @map("default_on")
+  /// Optional product scope (null = platform-wide)
+  productSlug String? @map("product_slug")
+
+  productOverrides ProductFeatureFlag[]
+  workspaceOverrides WorkspaceFeatureFlag[]
+
+  @@map("feature_flags")
+}
+
+model ProductFeatureFlag {
+  id          String  @id @default(uuid()) @db.Uuid
+  productId   String  @map("product_id") @db.Uuid
+  flagKey     String  @map("flag_key")
+  defaultOn   Boolean @default(false) @map("default_on")
+
+  product Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  flag    FeatureFlag @relation(fields: [flagKey], references: [key], onDelete: Cascade)
+
+  @@unique([productId, flagKey])
+  @@map("product_feature_flags")
+}
+
+model WorkspaceFeatureFlag {
+  id          String  @id @default(uuid()) @db.Uuid
+  workspaceId String  @map("workspace_id") @db.Uuid
+  flagKey     String  @map("flag_key")
+  enabled     Boolean
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  flag      FeatureFlag @relation(fields: [flagKey], references: [key], onDelete: Cascade)
+
+  @@unique([workspaceId, flagKey])
+  @@map("workspace_feature_flags")
+}
+
+// ─── Billing (Stripe-ready) ──────────────────────────────────────────────────
+
+model PlatformPlan {
+  id              String  @id @default(uuid()) @db.Uuid
+  slug            String  @unique
+  name            String
+  description     String?
+  priceMonthlyCents Int   @map("price_monthly_cents")
+  priceYearlyCents  Int   @default(0) @map("price_yearly_cents")
+  maxUsers        Int     @default(5) @map("max_users")
+  maxProducts     Int     @default(2) @map("max_products")
+  /// Stripe Price ID (populated when Stripe is connected)
+  stripePriceIdMonthly String? @map("stripe_price_id_monthly")
+  stripePriceIdYearly  String? @map("stripe_price_id_yearly")
+  features        Json    @default("[]")
+  isPublic        Boolean @default(true) @map("is_public")
+  sortOrder       Int     @default(0) @map("sort_order")
+
+  subscriptions Subscription[]
+
+  @@map("platform_plans")
+}
+
+model BillingAccount {
+  id               String   @id @default(uuid()) @db.Uuid
+  workspaceId      String   @unique @map("workspace_id") @db.Uuid
+  billingEmail     String   @map("billing_email")
+  /// Stripe customer ID
+  stripeCustomerId String?  @unique @map("stripe_customer_id")
+  /// free | starter | pro | enterprise
+  planTier         String   @default("free") @map("plan_tier")
+  /// ACTIVE | PAST_DUE | CANCELED | TRIALING
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("billing_accounts")
+}
+
+model Subscription {
+  id                   String    @id @default(uuid()) @db.Uuid
+  workspaceId          String    @map("workspace_id") @db.Uuid
+  planId               String?   @map("plan_id") @db.Uuid
+  stripeSubscriptionId String?   @unique @map("stripe_subscription_id")
+  /// ACTIVE | TRIALING | PAST_DUE | CANCELED | INCOMPLETE
+  status               String    @default("ACTIVE")
+  billingCycle         String    @default("monthly") @map("billing_cycle")
+  currentPeriodStart   DateTime? @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd     DateTime? @map("current_period_end") @db.Timestamptz(6)
+  cancelAtPeriodEnd    Boolean   @default(false) @map("cancel_at_period_end")
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan      PlatformPlan? @relation(fields: [planId], references: [id])
+  addons    SubscriptionProductAddon[]
+
+  @@index([workspaceId])
+  @@map("subscriptions")
+}
+
+model SubscriptionProductAddon {
+  id             String  @id @default(uuid()) @db.Uuid
+  subscriptionId String  @map("subscription_id") @db.Uuid
+  productId      String  @map("product_id") @db.Uuid
+  stripePriceId  String? @map("stripe_price_id")
+  quantity       Int     @default(1)
+  unitPriceCents Int     @default(0) @map("unit_price_cents")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId, productId])
+  @@map("subscription_product_addons")
+}
+
+// ─── Activity & announcements ────────────────────────────────────────────────
+
+model ActivityLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  workspaceId  String   @map("workspace_id") @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  action       String
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@map("activity_logs")
+}
+
+model Announcement {
+  id          String    @id @default(uuid()) @db.Uuid
+  title       String
+  body        String
+  /// info | feature | maintenance | promotion
+  type        String    @default("info")
+  publishedAt DateTime  @default(now()) @map("published_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+  isActive    Boolean   @default(true) @map("is_active")
+
+  @@map("announcements")
+}
