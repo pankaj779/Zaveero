@@ -74,17 +74,7 @@ export function ConnectView() {
             <Input
               label="Databricks host"
               value={host}
-              onChange={(v) => {
-                setHost(v)
-                const h = v.replace(/^https?:\/\//, '').replace(/\/$/, '')
-                if (h) {
-                  setGatewayUrl((prev) =>
-                    prev.includes('dbc-xxxx') || !prev.trim()
-                      ? `https://${h}/ai-gateway/mlflow/v1/chat/completions`
-                      : prev
-                  )
-                }
-              }}
+              onChange={setHost}
               placeholder="dbc-xxxx.cloud.databricks.com"
               hint="Without https://"
             />
