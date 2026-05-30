@@ -46,7 +46,7 @@ services:
   - type: web
     name: datawhisper-api
     runtime: docker
-    rootDir: AI Data Analyst for Databases/backend
+    rootDir: DataWhisper/backend
     dockerfilePath: ./Dockerfile
     plan: free
     healthCheckPath: /health

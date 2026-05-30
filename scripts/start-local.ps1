@@ -39,12 +39,12 @@ Start-Sleep -Seconds 2
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root\AgentOps_Databricks\frontend'; npm run dev"
 
 Write-Host "`n[4/5] DataWhisper Postgres + API (Docker :8002)..." -ForegroundColor Green
-Push-Location "$Root\AI Data Analyst for Databases\infra"
+Push-Location "$Root\DataWhisper\infra"
 docker compose up -d postgres backend
 Pop-Location
 
 Write-Host "`n[5/5] DataWhisper Frontend (:3001)..." -ForegroundColor Green
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root\AI Data Analyst for Databases\frontend'; npm run dev"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$Root\DataWhisper\frontend'; npm run dev"
 
 Write-Host "`n=== Ready ===" -ForegroundColor Cyan
 Write-Host "  Zaavero:     http://localhost:3000"

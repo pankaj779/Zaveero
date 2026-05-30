@@ -32,7 +32,7 @@ See **[Zaavero/docs/DEPLOYMENT.md](Zaavero/docs/DEPLOYMENT.md)** for the full ru
 Applications/
 ├── Zaavero/                 # Platform (Next.js + FastAPI)
 ├── AgentOps_Databricks/     # AgentOps module
-├── AI Data Analyst for Databases/  # DataWhisper module
+├── DataWhisper/  # DataWhisper module
 ├── render.yaml              # Render Blueprint (3 APIs)
 └── scripts/
     ├── start-local.ps1

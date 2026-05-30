@@ -129,7 +129,7 @@ Create 3 **Web Services** from Docker, pointing at:
 |---------|----------------|------------|
 | zaavero-api | `Zaavero/backend` | `Dockerfile` |
 | agentops-api | `AgentOps_Databricks/backend` | `Dockerfile` |
-| datawhisper-api | `AI Data Analyst for Databases/backend` | `Dockerfile` |
+| datawhisper-api | `DataWhisper/backend` | `Dockerfile` |
 
 Use env vars from [`.env.production.example`](../../Zaavero/backend/.env.production.example) files in each backend.
 
@@ -180,7 +180,7 @@ Uses [`vercel.json`](../../AgentOps_Databricks/frontend/vercel.json) for SPA rou
 
 | Setting | Value |
 |---------|-------|
-| Root Directory | `AI Data Analyst for Databases/frontend` |
+| Root Directory | `DataWhisper/frontend` |
 | Framework | Next.js |
 
 **Environment variables (Production):**
@@ -253,8 +253,8 @@ Production examples (copy to Render/Vercel dashboards):
 - [`Zaavero/frontend/.env.production.example`](../../Zaavero/frontend/.env.production.example)
 - [`AgentOps_Databricks/backend/.env.production.example`](../../AgentOps_Databricks/backend/.env.production.example)
 - [`AgentOps_Databricks/frontend/.env.production.example`](../../AgentOps_Databricks/frontend/.env.production.example)
-- [`AI Data Analyst for Databases/backend/.env.production.example`](../../AI%20Data%20Analyst%20for%20Databases/backend/.env.production.example)
-- [`AI Data Analyst for Databases/frontend/.env.production.example`](../../AI%20Data%20Analyst%20for%20Databases/frontend/.env.production.example)
+- [`DataWhisper/backend/.env.production.example`](../../DataWhisper/backend/.env.production.example)
+- [`DataWhisper/frontend/.env.production.example`](../../DataWhisper/frontend/.env.production.example)
 
 ---
 
