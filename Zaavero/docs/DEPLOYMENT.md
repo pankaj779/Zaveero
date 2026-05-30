@@ -1,137 +1,294 @@
-# Deploying Zaavero to zaavero.com
+# Production deployment — zaavero.com (free tier)
 
-This guide covers production deployment of the Zaavero platform and its product modules.
+Deploy the full Zaavero constellation at **$0/month** for feedback testing:
 
-## Architecture overview
+| Layer | Service | Hosts |
+|-------|---------|-------|
+| Frontends (×3) | Vercel Hobby | `zaavero.com`, `agentops.`, `datawhisper.` |
+| Backends (×3) | Render Free | `api.`, `agentops-api.`, `datawhisper-api.` |
+| Databases (×2) | Neon Free | `zaavero` + `datawhisper` databases |
+| DNS | GoDaddy | CNAME/A records |
 
-| Component | Suggested host | Domain |
-|-----------|----------------|--------|
-| Zaavero frontend (Next.js) | Vercel | `zaavero.com`, `www.zaavero.com` |
-| Zaavero API (FastAPI) | Railway / Render / Fly.io | `api.zaavero.com` |
-| PostgreSQL | Neon / Supabase / Railway | (connection string only) |
-| AgentOps frontend | Vercel or static CDN | `agentops.zaavero.com` |
-| AgentOps API | Railway / Render | `agentops-api.zaavero.com` |
-| DataWhisper frontend | Vercel | `datawhisper.zaavero.com` |
-| DataWhisper API | Railway / Docker | `datawhisper-api.zaavero.com` |
+**Trade-off:** Render free services **sleep after ~15 minutes idle**. First request after sleep takes 30–60 seconds (cold start). Fine for demos; upgrade to Render Starter ($7/service) when you need always-on.
 
-Documentation is served **inside** the Zaavero app at `/documentation` — no separate `docs.zaavero.com` subdomain is required unless you add one later.
+**AgentOps caveat:** Databricks connections and monitored agents are stored in **SQLite** on the API container. On Render free tier, data can be **lost on redeploy**. Users re-enter Databricks settings via `/connect` after redeploys until Postgres migration is added.
 
 ---
 
-## 1. Zaavero backend (API)
+## Architecture
 
-### Environment variables
+```
+zaavero.com          → Vercel (Zaavero Next.js)
+api.zaavero.com      → Render (Zaavero FastAPI) → Neon DB `zaavero`
 
-```env
-DATABASE_URL=postgresql://USER:PASS@HOST:5432/zaavero
-JWT_SECRET=<long-random-string-min-32-chars>
-CORS_ORIGINS=https://zaavero.com,https://www.zaavero.com
+agentops.zaavero.com     → Vercel (AgentOps Vite SPA)
+agentops-api.zaavero.com → Render (AgentOps FastAPI) → SQLite (ephemeral on free tier)
 
-AGENTOPS_LAUNCH_URL=https://agentops.zaavero.com/sso/zaavero
-DATAWHISPER_LAUNCH_URL=https://datawhisper.zaavero.com/sso/zaavero
+datawhisper.zaavero.com     → Vercel (DataWhisper Next.js)
+datawhisper-api.zaavero.com → Render (DataWhisper FastAPI) → Neon DB `datawhisper`
 ```
 
-### Deploy steps
-
-```bash
-cd Zaavero/backend
-pip install -r requirements.txt
-prisma generate
-prisma db push
-PYTHONPATH=. python scripts/seed_catalog.py
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-Point `api.zaavero.com` DNS (CNAME) to your host. Verify: `GET https://api.zaavero.com/health`
+SSO flow: Zaavero issues token → product validates via `POST https://api.zaavero.com/auth/sso/verify`.
 
 ---
 
-## 2. Zaavero frontend (Next.js)
+## Step 1 — Push to GitHub
 
-### Environment variables (Vercel)
+Repo is initialized locally at `Applications/`. Push to GitHub:
 
-```env
-NEXTAUTH_SECRET=<long-random-string>
+```powershell
+cd C:\Users\Pankaj_Kumar\My_documents\Applications
+
+# Create empty repo on GitHub: github.com/new → name: zaavero-constellation (private recommended)
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/zaavero-constellation.git
+git push -u origin main
+```
+
+Or run: `.\scripts\push-github.ps1 -RemoteUrl https://github.com/YOUR_USERNAME/zaavero-constellation.git`
+
+**Never commit:** `.env`, `.env.local`, `replay_targets.json`, `*.db`, API keys.
+
+---
+
+## Step 2 — Neon PostgreSQL (free)
+
+1. Sign up at [neon.tech](https://neon.tech)
+2. Create project **`zaavero-prod`** (region closest to your users)
+3. Create two databases in the project:
+   - `zaavero`
+   - `datawhisper`
+4. Copy **pooled** connection strings (Dashboard → Connection Details → Pooled, `?sslmode=require`)
+
+Save these for Render:
+
+| Variable | Database |
+|----------|----------|
+| `DATABASE_URL` on **zaavero-api** | `zaavero` |
+| `DATABASE_URL` + `MIGRATION_DATABASE_URL` on **datawhisper-api** | `datawhisper` (same URL for both on Neon free tier) |
+
+Generate secrets (PowerShell):
+
+```powershell
+# JWT secrets (run twice, use different values)
+-join ((48..57) + (65..90) + (97..122) | Get-Random -Count 48 | ForEach-Object {[char]$_})
+```
+
+---
+
+## Step 3 — Render backends (free, 3 services)
+
+### Option A — Blueprint (recommended)
+
+1. [render.com](https://render.com) → **New** → **Blueprint**
+2. Connect GitHub repo `zaavero-constellation`
+3. Render reads [`render.yaml`](../../render.yaml) at repo root and creates 3 services
+4. In Render dashboard, set **secret** env vars:
+
+**zaavero-api**
+
+| Key | Value |
+|-----|-------|
+| `DATABASE_URL` | Neon pooled URL → `zaavero` |
+| `JWT_SECRET` | random 48+ chars |
+
+**agentops-api**
+
+| Key | Value |
+|-----|-------|
+| `JWT_SECRET` | random 48+ chars |
+
+(`ZAAVERO_API_URL`, `CORS_ORIGINS` are preset in `render.yaml`)
+
+**datawhisper-api**
+
+| Key | Value |
+|-----|-------|
+| `DATABASE_URL` | Neon pooled URL → `datawhisper` |
+| `MIGRATION_DATABASE_URL` | same as `DATABASE_URL` |
+| `JWT_SECRET` | random 48+ chars |
+| `OPENAI_API_KEY` | optional, for NL→SQL |
+
+5. Wait for deploy → verify:
+   - `https://zaavero-api.onrender.com/health` (or custom domain)
+   - `https://agentops-api.onrender.com/api/health`
+   - `https://datawhisper-api.onrender.com/health`
+
+6. Attach **custom domains** (Render → each service → Settings → Custom Domains):
+   - `api.zaavero.com`
+   - `agentops-api.zaavero.com`
+   - `datawhisper-api.zaavero.com`
+
+7. After first Zaavero deploy, set `SEED_CATALOG=0` on **zaavero-api** to skip startup seed on every restart (optional).
+
+### Option B — Manual web services
+
+Create 3 **Web Services** from Docker, pointing at:
+
+| Service | Root directory | Dockerfile |
+|---------|----------------|------------|
+| zaavero-api | `Zaavero/backend` | `Dockerfile` |
+| agentops-api | `AgentOps_Databricks/backend` | `Dockerfile` |
+| datawhisper-api | `AI Data Analyst for Databases/backend` | `Dockerfile` |
+
+Use env vars from [`.env.production.example`](../../Zaavero/backend/.env.production.example) files in each backend.
+
+---
+
+## Step 4 — Vercel frontends (free, 3 projects)
+
+Create **three** Vercel projects from the same GitHub repo:
+
+### zaavero-web
+
+| Setting | Value |
+|---------|-------|
+| Root Directory | `Zaavero/frontend` |
+| Framework | Next.js |
+
+**Environment variables (Production):**
+
+```
 NEXTAUTH_URL=https://zaavero.com
+NEXTAUTH_SECRET=<random-48-chars>
 NEXT_PUBLIC_API_URL=https://api.zaavero.com
 INTERNAL_API_URL=https://api.zaavero.com
 ```
 
-### Deploy
+**Domains:** `zaavero.com`, `www.zaavero.com`
 
-1. Import `Zaavero/frontend` repo/folder into Vercel.
-2. Set root directory to `frontend`.
-3. Add env vars above.
-4. Add custom domains: `zaavero.com`, `www.zaavero.com`.
+### agentops-web
 
----
+| Setting | Value |
+|---------|-------|
+| Root Directory | `AgentOps_Databricks/frontend` |
+| Framework | Vite |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
 
-## 3. AgentOps module
+**Environment variables (Production):**
 
-Set in AgentOps backend `.env`:
-
-```env
-ZAAVERO_API_URL=https://api.zaavero.com
+```
+VITE_API_URL=https://agentops-api.zaavero.com
 ```
 
-Set CORS on AgentOps API to allow your AgentOps frontend origin.
+Uses [`vercel.json`](../../AgentOps_Databricks/frontend/vercel.json) for SPA routing (`/sso/zaavero`, etc.).
 
-Update Zaavero seed/registry launch URL to production AgentOps SSO callback.
+**Domain:** `agentops.zaavero.com`
 
----
+### datawhisper-web
 
-## 4. DataWhisper module
+| Setting | Value |
+|---------|-------|
+| Root Directory | `AI Data Analyst for Databases/frontend` |
+| Framework | Next.js |
 
-Mirror the AgentOps SSO pattern:
+**Environment variables (Production):**
 
-- `ZAAVERO_API_URL=https://api.zaavero.com` in DataWhisper backend
-- Launch URL: `https://datawhisper.zaavero.com/sso/zaavero`
+```
+NEXTAUTH_URL=https://datawhisper.zaavero.com
+NEXTAUTH_SECRET=<random-48-chars>
+NEXT_PUBLIC_API_URL=https://datawhisper-api.zaavero.com
+INTERNAL_API_URL=https://datawhisper-api.zaavero.com
+```
 
----
-
-## 5. DNS checklist (example)
-
-| Record | Type | Value |
-|--------|------|-------|
-| `@` | A / CNAME | Vercel |
-| `www` | CNAME | Vercel |
-| `api` | CNAME | Railway/Render |
-| `agentops` | CNAME | Vercel |
-| `datawhisper` | CNAME | Vercel |
+**Domain:** `datawhisper.zaavero.com`
 
 ---
 
-## 6. Post-deploy verification
+## Step 5 — GoDaddy DNS
 
-- [ ] `https://zaavero.com` loads with styled UI
-- [ ] Register a workspace
+In GoDaddy → **DNS** for `zaavero.com`:
+
+### Vercel (platform + product UIs)
+
+When you add each domain in Vercel, it shows exact records. Typically:
+
+| Type | Name | Value |
+|------|------|-------|
+| A | `@` | Vercel IP (e.g. `76.76.21.21`) |
+| CNAME | `www` | `cname.vercel-dns.com` |
+| CNAME | `agentops` | `cname.vercel-dns.com` |
+| CNAME | `datawhisper` | `cname.vercel-dns.com` |
+
+### Render (APIs)
+
+Render gives a hostname like `zaavero-api.onrender.com` when you add a custom domain:
+
+| Type | Name | Value |
+|------|------|-------|
+| CNAME | `api` | `zaavero-api.onrender.com` |
+| CNAME | `agentops-api` | `agentops-api.onrender.com` |
+| CNAME | `datawhisper-api` | `datawhisper-api.onrender.com` |
+
+Wait 5–60 minutes for propagation. HTTPS is automatic on Vercel and Render.
+
+---
+
+## Step 6 — Verify end-to-end
+
+Run locally after DNS propagates:
+
+```powershell
+cd Applications
+.\scripts\verify-production.ps1
+```
+
+Manual checklist:
+
+- [ ] `https://zaavero.com` — landing page loads
+- [ ] Register a new workspace (Neon DB is empty in prod)
 - [ ] Marketplace → Enable AgentOps and DataWhisper
-- [ ] Products → Documentation opens `/documentation/agentops` (in-app)
-- [ ] Launch AgentOps → SSO lands in AgentOps dashboard
-- [ ] Launch DataWhisper → SSO lands in DataWhisper dashboard
+- [ ] Products → Launch AgentOps → SSO → `/connect` → save Databricks → add agents
+- [ ] Products → Launch DataWhisper → SSO → dashboard
+- [ ] Documentation at `/documentation/agentops` works in-app
 
 ---
 
-## Local development (all services)
+## Environment reference
 
-Use the startup script (recommended):
+Production examples (copy to Render/Vercel dashboards):
+
+- [`Zaavero/backend/.env.production.example`](../../Zaavero/backend/.env.production.example)
+- [`Zaavero/frontend/.env.production.example`](../../Zaavero/frontend/.env.production.example)
+- [`AgentOps_Databricks/backend/.env.production.example`](../../AgentOps_Databricks/backend/.env.production.example)
+- [`AgentOps_Databricks/frontend/.env.production.example`](../../AgentOps_Databricks/frontend/.env.production.example)
+- [`AI Data Analyst for Databases/backend/.env.production.example`](../../AI%20Data%20Analyst%20for%20Databases/backend/.env.production.example)
+- [`AI Data Analyst for Databases/frontend/.env.production.example`](../../AI%20Data%20Analyst%20for%20Databases/frontend/.env.production.example)
+
+---
+
+## Local development
 
 ```powershell
 cd Applications
 .\scripts\start-local.ps1
 ```
 
-| Service | URL | Notes |
-|---------|-----|-------|
-| Zaavero UI | http://localhost:3000 | |
-| Zaavero API | http://localhost:8000 | Postgres on :5433 |
-| AgentOps UI | http://localhost:5173 | |
-| AgentOps API | http://localhost:8081 | **Not 8080** — stale processes on 8080 lack auth routes |
-| DataWhisper UI | http://localhost:3001 | |
-| DataWhisper API | http://localhost:8002 | Docker; avoids conflict with Zaavero on :8000 |
+| Service | URL |
+|---------|-----|
+| Zaavero | http://localhost:3000 |
+| Zaavero API | http://localhost:8000 |
+| AgentOps | http://localhost:5173 (API :8081) |
+| DataWhisper | http://localhost:3001 (API :8002) |
 
-**AgentOps:** `frontend/.env.development` must set `VITE_API_PORT=8081`. Restart the Vite dev server after changing it.
+---
 
-**DataWhisper:** `frontend/.env.local` needs `NEXT_PUBLIC_API_URL=http://localhost:8002` and `INTERNAL_API_URL=http://127.0.0.1:8002`. Rebuild the Docker backend after SSO code changes: `docker compose up -d --build backend` in `AI Data Analyst for Databases/infra`.
+## Upgrade path (when you outgrow free tier)
 
-Launch only works when the target product app **and** its API are running.
+| Need | Action |
+|------|--------|
+| No cold starts | Render Starter ($7/mo per service) or Railway |
+| AgentOps persistence | Render persistent disk or migrate SQLite → Postgres |
+| Stripe billing | Add `STRIPE_*` keys to Zaavero backend |
+| Email auth | Add SMTP or Auth0/Clerk |
+
+---
+
+## What's still pending (post-MVP)
+
+- Live Stripe checkout
+- Password reset / email verification
+- Pipeline Studio product (marketplace placeholder today)
+- SAML/SCIM (Enterprise tier)
+- AgentOps Postgres migration for durable multi-tenant storage
