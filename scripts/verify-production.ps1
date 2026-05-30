@@ -43,7 +43,7 @@ if ($failed -eq 0) {
 } else {
   Write-Host "$failed check(s) failed. Common causes:" -ForegroundColor Yellow
   Write-Host "  - DNS not propagated yet (wait 30-60 min)"
-  Write-Host "  - Render service sleeping (retry — first hit wakes it)"
+  Write-Host "  - Render service sleeping (retry, first hit wakes it)"
   Write-Host "  - Custom domain not attached in Vercel/Render"
   exit 1
 }
