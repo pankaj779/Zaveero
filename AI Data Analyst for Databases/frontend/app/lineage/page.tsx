@@ -1,12 +1,19 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
-import { CodeSymbolGraph } from "@/components/code-symbol-graph";
-import { UnifiedLineageGraph } from "@/components/unified-lineage-graph";
+const CodeSymbolGraph = dynamic(
+  () => import("@/components/code-symbol-graph").then((m) => m.CodeSymbolGraph),
+  { ssr: false, loading: () => <div className="p-8 text-sm text-[hsl(var(--muted-foreground))]">Loading graph…</div> }
+);
+const UnifiedLineageGraph = dynamic(
+  () => import("@/components/unified-lineage-graph").then((m) => m.UnifiedLineageGraph),
+  { ssr: false, loading: () => <div className="p-8 text-sm text-[hsl(var(--muted-foreground))]">Loading graph…</div> }
+);
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
