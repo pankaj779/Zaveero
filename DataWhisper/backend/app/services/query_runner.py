@@ -60,21 +60,24 @@ async def run_execute_request(user, body: ExecuteRequest, *, persist_history: bo
             conf = 0.95 if catalog_result["row_count"] else 0.5
             insight = generate_insight(body.question, catalog_result["columns"], catalog_result["rows"])
             if persist_history:
-                await prisma.queryhistory.create(
-                    data={
-                        "workspaceId": str(user.workspaceId),
-                        "userId": str(user.id),
-                        "connectionId": str(conn.id),
-                        "metadataVersionId": str(mv.id),
-                        "question": body.question or "",
-                        "sqlText": body.sql,
-                        "resultRowCount": catalog_result["row_count"],
-                        "chartType": catalog_result["chart_type"],
-                        "explanation": explanation or None,
-                        "confidenceScore": conf,
-                    }
-                )
-                await record_execution(str(user.id), str(user.workspaceId))
+                try:
+                    await prisma.queryhistory.create(
+                        data={
+                            "workspaceId": str(user.workspaceId),
+                            "userId": str(user.id),
+                            "connectionId": str(conn.id),
+                            "metadataVersionId": str(mv.id),
+                            "question": body.question or "",
+                            "sqlText": body.sql,
+                            "resultRowCount": catalog_result["row_count"],
+                            "chartType": catalog_result["chart_type"],
+                            "explanation": explanation or None,
+                            "confidenceScore": conf,
+                        }
+                    )
+                    await record_execution(str(user.id), str(user.workspaceId))
+                except Exception:
+                    pass
             return ExecuteResponse(
                 columns=catalog_result["columns"],
                 rows=catalog_result["rows"],
@@ -84,7 +87,7 @@ async def run_execute_request(user, body: ExecuteRequest, *, persist_history: bo
                 explanation=explanation or None,
                 insight=insight or None,
                 confidence=conf,
-                metadata_version_id=mv.id,
+                metadata_version_id=str(mv.id),
             )
 
     # Safety checks always enforced (no DML/DDL, read-only, single statement)
@@ -109,7 +112,8 @@ async def run_execute_request(user, body: ExecuteRequest, *, persist_history: bo
                 conn.type, cfg, body.sql, max_rows=500, chart_preference=body.chart_preference
             )
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Execution failed: {e}") from e
+            msg = str(e).strip() or e.__class__.__name__
+            raise HTTPException(status_code=400, detail=f"Execution failed: {msg}") from e
         set_cached(str(conn.id), body.sql, result)
 
     explanation = ""
@@ -122,21 +126,24 @@ async def run_execute_request(user, body: ExecuteRequest, *, persist_history: bo
     insight = generate_insight(body.question, result["columns"], result["rows"])
 
     if persist_history:
-        await prisma.queryhistory.create(
-            data={
-                "workspaceId": str(user.workspaceId),
-                "userId": str(user.id),
-                "connectionId": str(conn.id),
-                "metadataVersionId": str(mv.id),
-                "question": body.question or "",
-                "sqlText": body.sql,
-                "resultRowCount": result["row_count"],
-                "chartType": result["chart_type"],
-                "explanation": explanation or None,
-                "confidenceScore": conf,
-            }
-        )
-        await record_execution(str(user.id), str(user.workspaceId))
+        try:
+            await prisma.queryhistory.create(
+                data={
+                    "workspaceId": str(user.workspaceId),
+                    "userId": str(user.id),
+                    "connectionId": str(conn.id),
+                    "metadataVersionId": str(mv.id),
+                    "question": body.question or "",
+                    "sqlText": body.sql,
+                    "resultRowCount": result["row_count"],
+                    "chartType": result["chart_type"],
+                    "explanation": explanation or None,
+                    "confidenceScore": conf,
+                }
+            )
+            await record_execution(str(user.id), str(user.workspaceId))
+        except Exception:
+            pass  # history is best-effort; never fail the query response
 
     return ExecuteResponse(
         columns=result["columns"],
@@ -147,5 +154,5 @@ async def run_execute_request(user, body: ExecuteRequest, *, persist_history: bo
         explanation=explanation or None,
         insight=insight or None,
         confidence=conf,
-        metadata_version_id=mv.id,
+        metadata_version_id=str(mv.id),
     )

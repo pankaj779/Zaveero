@@ -5,12 +5,25 @@ from __future__ import annotations
 import re
 
 
+def _databricks_unquote_simple_identifiers(sql: str) -> str:
+    """Use catalog.schema.table without backticks when safe (matches metadata scanner)."""
+
+    def repl(m: re.Match[str]) -> str:
+        parts = re.findall(r"`([^`]+)`", m.group(0))
+        if parts and all(re.match(r"^[\w]+$", p) for p in parts):
+            return ".".join(parts)
+        return m.group(0)
+
+    return re.sub(r"(?:`[\w]+`)(?:\.`[\w]+`)+", repl, sql)
+
+
 def fix_sql_for_execution(sql: str, dialect: str) -> str:
     """
     Normalize common SQL mistakes before sending to the warehouse.
 
     Databricks: `catalog.schema.table` as one backtick identifier is invalid —
-    must be `catalog`.`schema`.`table`.
+    must be `catalog`.`schema`.`table`, then prefer unquoted catalog.schema.table
+    when identifiers are simple (same style as metadata scan queries).
     """
     d = dialect.upper()
     if d != "DATABRICKS":
@@ -24,7 +37,8 @@ def fix_sql_for_execution(sql: str, dialect: str) -> str:
                 return ".".join(f"`{p}`" for p in parts)
         return m.group(0)
 
-    return re.sub(r"`([^`]+)`", _split_backtick, sql)
+    out = re.sub(r"`([^`]+)`", _split_backtick, sql)
+    return _databricks_unquote_simple_identifiers(out)
 
 
 def quote_table_name(full_name: str, dialect: str) -> str:

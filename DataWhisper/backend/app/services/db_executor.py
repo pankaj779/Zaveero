@@ -2,6 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from app.services.json_safe import json_safe_row
 from app.services.sql_catalog_rewrite import prepare_sql_for_execution
 from app.services.sql_dialect import fix_sql_for_execution
 from app.utils.db_clients import execute_readonly
@@ -72,20 +73,6 @@ def resolve_chart_type(
     return p
 
 
-def _json_safe_row(row: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, (datetime, date)):
-            out[k] = v.isoformat()
-        elif isinstance(v, Decimal):
-            out[k] = float(v)
-        elif isinstance(v, bytes):
-            out[k] = v.decode("utf-8", errors="replace")
-        else:
-            out[k] = v
-    return out
-
-
 async def run_query(
     conn_type: str,
     config: dict[str, Any],
@@ -97,7 +84,7 @@ async def run_query(
     safe_sql = prepare_sql_for_execution(sql, max_rows, dialect=ct)
     safe_sql = fix_sql_for_execution(safe_sql, ct)
     columns, rows = await execute_readonly(conn_type, config, safe_sql, max_rows=max_rows)
-    safe_rows = [_json_safe_row(r) for r in rows]
+    safe_rows = [json_safe_row(r) for r in rows]
     chart = resolve_chart_type(columns, safe_rows, chart_preference)
     return {
         "columns": columns,

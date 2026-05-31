@@ -21,10 +21,12 @@ export async function apiFetch<T>(
     data = text;
   }
   if (!res.ok) {
-    const msg =
-      typeof data === "object" && data && "detail" in data
-        ? JSON.stringify((data as { detail: unknown }).detail)
-        : text || res.statusText;
+    let msg = text || res.statusText;
+    if (typeof data === "object" && data && "detail" in data) {
+      const detail = (data as { detail: unknown }).detail;
+      if (typeof detail === "string") msg = detail;
+      else msg = JSON.stringify(detail);
+    }
     throw new Error(msg);
   }
   return data as T;
