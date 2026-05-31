@@ -2,7 +2,7 @@
 
 import unittest
 
-from app.services.catalog_queries import is_catalog_list_intent, list_tables_from_metadata
+from app.services.catalog_queries import extract_schema_scope, is_catalog_list_intent, list_tables_from_metadata
 from app.services.sql_catalog_rewrite import prepare_sql_for_execution, rewrite_show_tables
 
 
@@ -42,6 +42,31 @@ class TestCatalogQueries(unittest.TestCase):
         self.assertIsNotNone(out)
         assert out is not None
         self.assertEqual(out["row_count"], 2)
+
+    def test_generic_catalog_phrase_lists_all(self):
+        meta = {
+            "tables": [
+                {"name": "agentops.agent_logs.t1", "row_count": 1},
+                {"name": "agentops.agent_logs.t2", "row_count": 2},
+                {"name": "agentops.agent_logs.t3", "row_count": 3},
+            ]
+        }
+        out = list_tables_from_metadata(meta, question="show all the tables in the catalog")
+        self.assertIsNotNone(out)
+        assert out is not None
+        self.assertEqual(out["row_count"], 3)
+
+    def test_catalog_with_trailing_period_lists_all(self):
+        meta = {
+            "tables": [
+                {"name": "agentops.agent_logs.t1", "row_count": 1},
+            ]
+        }
+        out = list_tables_from_metadata(meta, question="show all the tables in the catalog.")
+        self.assertIsNotNone(out)
+        assert out is not None
+        self.assertEqual(out["row_count"], 1)
+        self.assertIsNone(extract_schema_scope("show all the tables in the catalog.", None, meta))
 
 
 class TestSqlCatalogRewrite(unittest.TestCase):

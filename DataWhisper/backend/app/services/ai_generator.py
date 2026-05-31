@@ -16,7 +16,7 @@ SYSTEM_PROMPT = """You are DataWhisper's NL→SQL engine. Output ONE JSON object
    - Databricks/BigQuery: `catalog.schema.table`
    - Snowflake: `SCHEMA.TABLE`
 3. DIALECT (check `metadata.engine`):
-   - **databricks**: Spark SQL. Use backticks for identifiers. `LIMIT n` works on **SELECT/WITH only** — never on SHOW/DESCRIBE/EXPLAIN (Spark SHOW TABLES supports LIKE, not LIMIT).
+   - **databricks**: Spark SQL. Quote each part separately: `catalog`.`schema`.`table` — NEVER `catalog.schema.table` in one backtick pair.
    - **bigquery**: Backticks for tables. LIMIT on SELECT/WITH only.
    - **sqlserver**: [brackets]. Use SELECT TOP N (not LIMIT) on SELECT queries.
    - **mysql**: Backticks. LIMIT on SELECT/WITH only.

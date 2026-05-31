@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.services.sql_catalog_rewrite import prepare_sql_for_execution
+from app.services.sql_dialect import fix_sql_for_execution
 from app.utils.db_clients import execute_readonly
 
 
@@ -94,6 +95,7 @@ async def run_query(
 ) -> dict[str, Any]:
     ct = conn_type.upper()
     safe_sql = prepare_sql_for_execution(sql, max_rows, dialect=ct)
+    safe_sql = fix_sql_for_execution(safe_sql, ct)
     columns, rows = await execute_readonly(conn_type, config, safe_sql, max_rows=max_rows)
     safe_rows = [_json_safe_row(r) for r in rows]
     chart = resolve_chart_type(columns, safe_rows, chart_preference)

@@ -10,6 +10,7 @@ from app.services.audit import log_audit
 from app.services.rate_limiter import check_ai_rate
 from app.schemas.execute import AiSqlRequest, AiSqlResponse
 from app.services.ai_generator import explain_sql, generate_sql
+from app.services.catalog_queries import catalog_list_sql_for_ai, is_catalog_list_intent
 from app.services.confidence import compute_confidence
 from app.services.data_scope import apply_ai_data_scope
 from app.services.lineage_read import get_merged_edges_from_mv
@@ -83,6 +84,29 @@ async def generate_ai_sql(body: AiSqlRequest, user=Depends(require_sql_runner)):
             detail="No tables remain after applying ai_data_scope on this connection. "
             "Relax allowed_table_prefixes or blocked_name_substrings, then scan again.",
         )
+
+    # List-tables / catalog questions — use scanned metadata directly (no LLM guessing)
+    if is_catalog_list_intent(body.question):
+        from app.services.catalog_queries import list_tables_from_metadata
+
+        catalog = list_tables_from_metadata(meta, question=body.question)
+        if catalog and catalog["row_count"] > 0:
+            sql = catalog_list_sql_for_ai(meta, body.question) or catalog["sql"]
+            await log_audit(
+                str(user.workspaceId),
+                str(user.id),
+                "ai.generate_sql",
+                resource_type="connection",
+                resource_id=str(body.connection_id),
+                detail={"attempts": 0, "confidence": 0.95, "catalog_list": True},
+            )
+            return AiSqlResponse(
+                sql=sql,
+                explanation=catalog["explanation"],
+                confidence=0.95,
+                clarification_needed=False,
+                retry_attempts=0,
+            )
 
     allowed_names = {t["name"] for t in meta.get("tables", []) if isinstance(t, dict) and t.get("name")}
     facts = list(mv.factTables) if isinstance(mv.factTables, list) else []
