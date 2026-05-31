@@ -34,6 +34,8 @@ from app.services.audit import log_audit
 from app.services.connector_specs import CONNECTOR_SPECS, get_spec
 from app.services.crawl_runner import GIT_CLONE_SOURCE_TYPES, NATIVE_SCANNER_TYPES
 from app.services.jobs import enqueue_crawl
+from app.services.metadata_pipeline import run_metadata_scan_for_connection
+from app.services.table_names import resolve_table_to_known
 from app.utils.encrypt import decrypt_json, encrypt_json
 
 logger = logging.getLogger(__name__)
@@ -811,6 +813,12 @@ async def connect_discovery(
             }
         )
         child_connection_id = new_conn.id
+        background_tasks.add_task(
+            run_metadata_scan_for_connection,
+            child_connection_id,
+            str(user.workspaceId),
+            str(user.id),
+        )
 
     elif creates == "discovery_only":
         # Just keep encrypted credentials with the discovery for future reference.
@@ -854,6 +862,7 @@ async def connect_discovery(
         "child_crawl_source_id": child_source_id,
         "child_connection_id": child_connection_id,
         "sub_crawl_started": bool(child_source_id and body.start_crawl),
+        "metadata_scan_started": bool(child_connection_id),
     }
 
 
@@ -918,10 +927,25 @@ async def get_unified_lineage(user=Depends(get_current_user)):
 
     seen_connections: set[str] = set()
     db_edges: list[dict[str, Any]] = []
+    bridge_edges: list[dict[str, Any]] = []
+    scanned_tables: list[dict[str, Any]] = []
+    tables_by_connection: dict[str, set[str]] = {}
+
     for mv in mv_list:
         if mv.connectionId in seen_connections:
             continue
         seen_connections.add(mv.connectionId)
+        meta = mv.metadataJson if isinstance(mv.metadataJson, dict) else {}
+        table_names = {
+            t["name"] for t in (meta.get("tables") or []) if isinstance(t, dict) and t.get("name")
+        }
+        tables_by_connection[mv.connectionId] = table_names
+        for tname in sorted(table_names)[:50]:
+            scanned_tables.append({
+                "connection_id": mv.connectionId,
+                "connection_name": mv.connection.name if mv.connection else None,
+                "table_name": tname,
+            })
         if mv.lineageEdges:
             for edge in mv.lineageEdges:
                 db_edges.append({
@@ -932,6 +956,20 @@ async def get_unified_lineage(user=Depends(get_current_user)):
                     "connection_id": mv.connectionId,
                     "connection_name": mv.connection.name if mv.connection else None,
                 })
+
+    for n in code_nodes:
+        for conn_id, known in tables_by_connection.items():
+            resolved = resolve_table_to_known(n.nodeName, known)
+            if resolved:
+                bridge_edges.append({
+                    "source": "code_to_db",
+                    "code_node_id": n.id,
+                    "code_node_name": n.nodeName,
+                    "db_table": resolved,
+                    "connection_id": conn_id,
+                    "environment": n.environment,
+                })
+                break
 
     return {
         "workspace_id": workspace_id,
@@ -949,6 +987,9 @@ async def get_unified_lineage(user=Depends(get_current_user)):
             for n in code_nodes
         ],
         "db_lineage_edges": db_edges,
+        "code_to_db_bridges": bridge_edges,
+        "scanned_tables": scanned_tables,
         "total_code_nodes": len(code_nodes),
         "total_db_edges": len(db_edges),
+        "total_bridges": len(bridge_edges),
     }

@@ -8,16 +8,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.db import get_prisma, prisma
+from app.db import prisma
 from app.deps import get_current_user, require_connection_manager
 from app.schemas.metadata import MetadataOut, ScanResponse
-from app.services.audit import log_audit
-from app.services.lineage_builder import build_lineage_from_fks
-from app.services.lineage_infer import infer_join_candidates
-from app.services.lineage_read import adjacency_from_edges, merge_fk_and_inferred
-from app.services.metadata_scanner import scan_metadata
-from app.services.data_scope import driver_config
-from app.utils.encrypt import decrypt_json
+from app.services.metadata_pipeline import run_metadata_scan_for_connection
 
 router = APIRouter(prefix="/metadata", tags=["metadata"])
 logger = logging.getLogger(__name__)
@@ -133,84 +127,17 @@ async def get_metadata(
 
 @router.post("/{connection_id}/scan", response_model=ScanResponse)
 async def scan_metadata_endpoint(connection_id: uuid.UUID, user=Depends(require_connection_manager)):
-    conn = await _get_connection_in_workspace(connection_id, str(user.workspaceId))
-    cfg = driver_config(decrypt_json(conn.encryptedConfig))
-
+    await _get_connection_in_workspace(connection_id, str(user.workspaceId))
     try:
-        meta = await scan_metadata(conn.type, cfg)
+        result = await run_metadata_scan_for_connection(
+            str(connection_id),
+            str(user.workspaceId),
+            str(user.id),
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Scan failed: {e}") from e
-
-    tables = meta.get("tables") or []
-    edges, _adj_fk_only, facts, dims = build_lineage_from_fks(tables)
-    inferred = infer_join_candidates(tables)
-    merged_edges = merge_fk_and_inferred(edges, inferred)
-    full_adjacency = adjacency_from_edges(merged_edges)
-
-    # Lineage is derived from full in-memory scan (includes samples); persist slim metadata only.
-    safe_meta = _metadata_for_persist(meta)
-    safe_meta["inferred_lineage_edges"] = _prisma_json_safe(inferred)
-    safe_meta = _prisma_json_safe(safe_meta)
-    safe_adj = _prisma_json_safe(full_adjacency)
-    safe_facts = _prisma_json_safe(facts or [])
-    safe_dims = _prisma_json_safe(dims or [])
-
-    insert_metadata_sql = """
-    INSERT INTO metadata_versions (id, connection_id, version, metadata_json, lineage_adjacency, fact_tables, dimension_tables)
-    VALUES ($1::uuid, $2::uuid, $3::int, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb)
-    """
-    insert_edge_sql = """
-    INSERT INTO lineage_edges (id, metadata_version_id, from_table, to_table, fk_column, referenced_column)
-    VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6)
-    """
-
-    p = get_prisma()
-    try:
-        last = await p.metadataversion.find_first(
-            where={"connectionId": str(conn.id)},
-            order={"version": "desc"},
-        )
-        next_ver = (int(last.version) if last else 0) + 1
-        mv_id = str(uuid.uuid4())
-        # Raw SQL: Prisma GraphQL mutations embed Json inline; `catalog.schema.table` keys → "bare '.'" parse errors.
-        await p.execute_raw(
-            insert_metadata_sql,
-            mv_id,
-            str(conn.id),
-            next_ver,
-            _jsonb_param(safe_meta),
-            _jsonb_param(safe_adj),
-            _jsonb_param(safe_facts),
-            _jsonb_param(safe_dims),
-        )
-        for e in edges:
-            await p.execute_raw(
-                insert_edge_sql,
-                str(uuid.uuid4()),
-                mv_id,
-                str(e["from_table"]),
-                str(e["to_table"]),
-                str(e["fk_column"]),
-                str(e["referenced_column"]),
-            )
-    except Exception as e:
-        logger.exception("Failed to persist metadata scan for connection %s", conn.id)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Scan completed but saving results failed: {e!s}. Check server logs for details.",
-        ) from e
-
-    await log_audit(
-        str(user.workspaceId),
-        str(user.id),
-        "metadata.scan",
-        resource_type="connection",
-        resource_id=str(connection_id),
-        detail={
-            "version": next_ver,
-            "tables": len(meta.get("tables", [])),
-            "fk_edges": len(edges),
-            "inferred_edges": len(inferred),
-        },
+    return ScanResponse(
+        version=result["version"],
+        tables_scanned=result["tables_scanned"],
+        edges=result["edges"],
     )
-    return ScanResponse(version=next_ver, tables_scanned=len(meta.get("tables", [])), edges=len(merged_edges))

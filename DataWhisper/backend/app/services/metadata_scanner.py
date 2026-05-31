@@ -244,6 +244,21 @@ def _scan_mysql_sync(config: dict[str, Any]) -> dict[str, Any]:
         conn.close()
 
 
+def _snowflake_schemas_to_scan(cur, database: str, schema_config: str) -> list[str]:
+    s = (schema_config or "PUBLIC").strip()
+    if s.lower() in ("*", "all", "__all__"):
+        cur.execute(f"SHOW SCHEMAS IN DATABASE {database}")
+        names: list[str] = []
+        for row in cur.fetchall():
+            if not row:
+                continue
+            name = str(row[1] if len(row) > 1 else row[0]).strip()
+            if name and name.upper() != "INFORMATION_SCHEMA":
+                names.append(name)
+        return names or ["PUBLIC"]
+    return [s]
+
+
 def _scan_snowflake_sync(config: dict[str, Any]) -> dict[str, Any]:
     from snowflake import connector as sf
 
@@ -258,88 +273,108 @@ def _scan_snowflake_sync(config: dict[str, Any]) -> dict[str, Any]:
     )
     tables_out: list[dict[str, Any]] = []
     db = config.get("database") or ""
-    schema = config.get("schema") or "PUBLIC"
+    if not db:
+        conn.close()
+        return {"engine": "snowflake", "database": db, "tables": []}
+    schema_cfg = config.get("schema") or "PUBLIC"
     try:
         cur = conn.cursor()
-        cur.execute(
-            f"""
-            SELECT TABLE_SCHEMA, TABLE_NAME
-            FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_CATALOG = '{db}' AND TABLE_SCHEMA = '{schema}'
-            ORDER BY TABLE_NAME
-            """
-        )
-        for ts, tn in cur.fetchall():
-            full = f"{ts}.{tn}"
+        for schema in _snowflake_schemas_to_scan(cur, db, schema_cfg):
             cur.execute(
                 f"""
-                SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
-                FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_CATALOG = '{db}' AND TABLE_SCHEMA = '{ts}' AND TABLE_NAME = '{tn}'
-                ORDER BY ORDINAL_POSITION
+                SELECT TABLE_SCHEMA, TABLE_NAME
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_CATALOG = '{db}' AND TABLE_SCHEMA = '{schema}'
+                ORDER BY TABLE_NAME
                 """
             )
-            cols = [{"name": r[0], "type": r[1], "nullable": r[2] == "YES"} for r in cur.fetchall()]
-            cur.execute(
-                f"""
-                SELECT kcu.COLUMN_NAME
-                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-                  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-                WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
-                  AND tc.TABLE_CATALOG = '{db}' AND tc.TABLE_SCHEMA = '{ts}' AND tc.TABLE_NAME = '{tn}'
-                ORDER BY kcu.ORDINAL_POSITION
-                """
-            )
-            pk = [r[0] for r in cur.fetchall()]
-            cur.execute(
-                f"""
-                SELECT kcu.COLUMN_NAME, ccu.TABLE_SCHEMA AS rs, ccu.TABLE_NAME AS rt, ccu.COLUMN_NAME AS rc
-                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-                  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-                JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
-                  ON tc.CONSTRAINT_NAME = ccu.CONSTRAINT_NAME
-                WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
-                  AND tc.TABLE_CATALOG = '{db}' AND tc.TABLE_SCHEMA = '{ts}' AND tc.TABLE_NAME = '{tn}'
-                """
-            )
-            foreign_keys = [
-                {
-                    "columns": [r[0]],
-                    "referenced_table": f"{r[1]}.{r[2]}",
-                    "referenced_columns": [r[3]],
-                }
-                for r in cur.fetchall()
-            ]
-            sample = []
-            try:
-                cur.execute(f'SELECT * FROM "{ts}"."{tn}" LIMIT 5')
-                sample = _json_safe_sample(
-                    [dict(zip([d[0] for d in cur.description], row, strict=False)) for row in cur.fetchall()]
+            for ts, tn in cur.fetchall():
+                full = f"{db}.{ts}.{tn}"
+                cur.execute(
+                    f"""
+                    SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_CATALOG = '{db}' AND TABLE_SCHEMA = '{ts}' AND TABLE_NAME = '{tn}'
+                    ORDER BY ORDINAL_POSITION
+                    """
                 )
-            except Exception:
+                cols = [{"name": r[0], "type": r[1], "nullable": r[2] == "YES"} for r in cur.fetchall()]
+                cur.execute(
+                    f"""
+                    SELECT kcu.COLUMN_NAME
+                    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                      ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                    WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                      AND tc.TABLE_CATALOG = '{db}' AND tc.TABLE_SCHEMA = '{ts}' AND tc.TABLE_NAME = '{tn}'
+                    ORDER BY kcu.ORDINAL_POSITION
+                    """
+                )
+                pk = [r[0] for r in cur.fetchall()]
+                cur.execute(
+                    f"""
+                    SELECT kcu.COLUMN_NAME, ccu.TABLE_SCHEMA AS rs, ccu.TABLE_NAME AS rt, ccu.COLUMN_NAME AS rc
+                    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                      ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                    JOIN INFORMATION_SCHEMA.CONSTRAINT_COLUMN_USAGE ccu
+                      ON tc.CONSTRAINT_NAME = ccu.CONSTRAINT_NAME
+                    WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
+                      AND tc.TABLE_CATALOG = '{db}' AND tc.TABLE_SCHEMA = '{ts}' AND tc.TABLE_NAME = '{tn}'
+                    """
+                )
+                foreign_keys = [
+                    {
+                        "columns": [r[0]],
+                        "referenced_table": f"{db}.{r[1]}.{r[2]}",
+                        "referenced_columns": [r[3]],
+                    }
+                    for r in cur.fetchall()
+                ]
                 sample = []
-            row_count = None
-            try:
-                cur.execute(f'SELECT COUNT(*) FROM "{ts}"."{tn}"')
-                row_count = cur.fetchone()[0]
-            except Exception:
+                try:
+                    cur.execute(f'SELECT * FROM "{db}"."{ts}"."{tn}" LIMIT 5')
+                    sample = _json_safe_sample(
+                        [dict(zip([d[0] for d in cur.description], row, strict=False)) for row in cur.fetchall()]
+                    )
+                except Exception:
+                    try:
+                        cur.execute(f'SELECT * FROM "{ts}"."{tn}" LIMIT 5')
+                        sample = _json_safe_sample(
+                            [dict(zip([d[0] for d in cur.description], row, strict=False)) for row in cur.fetchall()]
+                        )
+                    except Exception:
+                        sample = []
                 row_count = None
-            tables_out.append(
-                {
-                    "name": full,
-                    "columns": cols,
-                    "primary_key": pk,
-                    "foreign_keys": foreign_keys,
-                    "sample_rows": sample,
-                    "row_count": row_count,
-                }
-            )
+                try:
+                    cur.execute(f'SELECT COUNT(*) FROM "{db}"."{ts}"."{tn}"')
+                    row_count = cur.fetchone()[0]
+                except Exception:
+                    row_count = None
+                tables_out.append(
+                    {
+                        "name": full,
+                        "columns": cols,
+                        "primary_key": pk,
+                        "foreign_keys": foreign_keys,
+                        "sample_rows": sample,
+                        "row_count": row_count,
+                    }
+                )
         cur.close()
-        return {"engine": "snowflake", "tables": tables_out}
+        return {"engine": "snowflake", "database": db, "tables": tables_out}
     finally:
         conn.close()
+
+
+def _bigquery_datasets_to_scan(client, project: str, dataset_config: str | None) -> list[str]:
+    ds = (dataset_config or "").strip()
+    if not ds or ds.lower() in ("*", "all", "__all__"):
+        try:
+            return [d.dataset_id for d in client.list_datasets(project)]
+        except Exception:
+            return []
+    return [ds]
 
 
 def _scan_bigquery_sync(config: dict[str, Any]) -> dict[str, Any]:
@@ -349,56 +384,54 @@ def _scan_bigquery_sync(config: dict[str, Any]) -> dict[str, Any]:
     sa_info = json.loads(config["service_account_json"])
     creds = service_account.Credentials.from_service_account_info(sa_info)
     project = config.get("project_id") or sa_info.get("project_id")
-    dataset_id = config.get("dataset")
-    if not dataset_id:
-        return {"engine": "bigquery", "tables": []}
     client = bigquery.Client(project=project, credentials=creds)
     tables_out: list[dict[str, Any]] = []
-    ds_ref = f"{project}.{dataset_id}"
-    try:
-        table_iter = client.list_tables(ds_ref)
-    except Exception:
-        return {"engine": "bigquery", "tables": []}
-    for t in table_iter:
-        tname = t.table_id
-        full = f"{project}.{dataset_id}.{tname}"
-        table = client.get_table(f"{ds_ref}.{tname}")
-        cols = [{"name": f.name, "type": f.field_type, "nullable": f.is_nullable == "NULLABLE"} for f in table.schema]
-        fk_meta: list[dict] = []
+    for dataset_id in _bigquery_datasets_to_scan(client, project, config.get("dataset")):
+        ds_ref = f"{project}.{dataset_id}"
         try:
-            tc = getattr(table, "table_constraints", None)
-            fks = getattr(tc, "foreign_keys", None) if tc else None
-            if fks:
-                for fk in fks:
-                    fk_meta.append(
-                        {
-                            "columns": list(getattr(fk, "column_references", {}).keys())
-                            if hasattr(fk, "column_references")
-                            else [],
-                            "referenced_table": str(getattr(fk, "referenced_table", "")),
-                            "referenced_columns": [],
-                        }
-                    )
+            table_iter = client.list_tables(ds_ref)
         except Exception:
-            fk_meta = []
-        sample = []
-        try:
-            job = client.query(f"SELECT * FROM `{ds_ref}.{tname}` LIMIT 5")
-            sample = _json_safe_sample([dict(row) for row in job.result()])
-        except Exception:
+            continue
+        for t in table_iter:
+            tname = t.table_id
+            full = f"{project}.{dataset_id}.{tname}"
+            table = client.get_table(f"{ds_ref}.{tname}")
+            cols = [{"name": f.name, "type": f.field_type, "nullable": f.is_nullable == "NULLABLE"} for f in table.schema]
+            fk_meta: list[dict] = []
+            try:
+                tc = getattr(table, "table_constraints", None)
+                fks = getattr(tc, "foreign_keys", None) if tc else None
+                if fks:
+                    for fk in fks:
+                        fk_meta.append(
+                            {
+                                "columns": list(getattr(fk, "column_references", {}).keys())
+                                if hasattr(fk, "column_references")
+                                else [],
+                                "referenced_table": str(getattr(fk, "referenced_table", "")),
+                                "referenced_columns": [],
+                            }
+                        )
+            except Exception:
+                fk_meta = []
             sample = []
-        row_count = table.num_rows
-        tables_out.append(
-            {
-                "name": full,
-                "columns": cols,
-                "primary_key": [f.name for f in table.schema if getattr(f, "mode", None) == "REQUIRED"][:1],
-                "foreign_keys": fk_meta,
-                "sample_rows": sample,
-                "row_count": row_count,
-            }
-        )
-    return {"engine": "bigquery", "tables": tables_out}
+            try:
+                job = client.query(f"SELECT * FROM `{ds_ref}.{tname}` LIMIT 5")
+                sample = _json_safe_sample([dict(row) for row in job.result()])
+            except Exception:
+                sample = []
+            row_count = table.num_rows
+            tables_out.append(
+                {
+                    "name": full,
+                    "columns": cols,
+                    "primary_key": [f.name for f in table.schema if getattr(f, "mode", None) == "REQUIRED"][:1],
+                    "foreign_keys": fk_meta,
+                    "sample_rows": sample,
+                    "row_count": row_count,
+                }
+            )
+    return {"engine": "bigquery", "project": project, "tables": tables_out}
 
 
 def _databricks_schemas_to_scan(cur, catalog: str, schema: str) -> list[str]:
@@ -431,7 +464,10 @@ def _scan_databricks_table(
         cur.execute(f"DESCRIBE TABLE {catalog}.{schema}.{tname}")
         for r in cur.fetchall():
             if isinstance(r, (list, tuple)) and len(r) >= 2:
-                cols.append({"name": r[0], "type": str(r[1]), "nullable": True})
+                col_name = str(r[0]).strip()
+                if not col_name or col_name.startswith("#"):
+                    continue
+                cols.append({"name": col_name, "type": str(r[1]), "nullable": True})
     except Exception:
         cols = []
     sample = []
@@ -720,6 +756,8 @@ def _scan_redshift_sync(config: dict[str, Any]) -> dict[str, Any]:
 
 
 async def scan_metadata(conn_type: str, config: dict[str, Any]) -> dict[str, Any]:
+    from app.services.table_names import normalize_metadata_tables
+
     ct = conn_type.upper()
     if ct == "POSTGRES":
         raw = await scan_postgres(config)
@@ -737,4 +775,5 @@ async def scan_metadata(conn_type: str, config: dict[str, Any]) -> dict[str, Any
         raw = await _run_sync(_scan_redshift_sync, config)
     else:
         raise ValueError(f"Unsupported type {conn_type}")
+    raw, _ = normalize_metadata_tables(raw, ct, config)
     return apply_semantic_to_metadata(raw)

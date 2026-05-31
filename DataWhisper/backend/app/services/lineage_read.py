@@ -113,11 +113,14 @@ def shortest_join_path(
 def merge_code_lineage_into_edges(
     db_edges: list[dict[str, Any]],
     code_nodes: list[dict[str, Any]],
+    known_tables: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Merge code-derived lineage (from crawler) into the existing edge list.
-    Code lineage nodes with parent_node connections become edges in the graph.
+    Merge code-derived lineage into DB edges.
+    When known_tables is provided, resolve code node names to scanned table names.
     """
+    from app.services.table_names import resolve_table_to_known
+
     merged = list(db_edges)
     seen: set[tuple[str, str]] = {
         (e.get("from_table", ""), e.get("to_table", ""))
@@ -135,6 +138,12 @@ def merge_code_lineage_into_edges(
         to_name = node.get("node_name", "")
         if not from_name or not to_name:
             continue
+        if known_tables:
+            from_resolved = resolve_table_to_known(from_name, known_tables)
+            to_resolved = resolve_table_to_known(to_name, known_tables)
+            if not from_resolved or not to_resolved:
+                continue
+            from_name, to_name = from_resolved, to_resolved
         pair = (from_name, to_name)
         if pair in seen:
             continue

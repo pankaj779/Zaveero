@@ -82,7 +82,7 @@ def apply_ai_data_scope(
     allowed_names = {t["name"] for t in kept}
 
     code_filtered = filter_code_nodes_by_environment(code_node_dicts, scope)
-    merged = merge_code_lineage_into_edges(list(db_edges), code_filtered)
+    merged = merge_code_lineage_into_edges(list(db_edges), code_filtered, allowed_names)
 
     edges_out: list[dict[str, Any]] = []
     for e in merged:

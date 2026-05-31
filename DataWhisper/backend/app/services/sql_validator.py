@@ -146,22 +146,9 @@ def _clean_ident(s: str) -> str:
 
 
 def _normalize_table(name: str, known: set[str]) -> str | None:
-    if name in known:
-        return name
-    name_lower = name.lower()
-    # exact case-insensitive
-    for k in known:
-        if k.lower() == name_lower:
-            return k
-    # suffix match: known="catalog.schema.table", name="schema.table" or "table"
-    for k in known:
-        if k.lower().endswith("." + name_lower):
-            return k
-    # last-segment match: known="catalog.schema.table", name="table"
-    for k in known:
-        if k.split(".")[-1].lower() == name_lower.split(".")[-1].lower():
-            return k
-    return None
+    from app.services.table_names import resolve_table_to_known
+
+    return resolve_table_to_known(name, known)
 
 
 def _columns_for_table(meta_tables: dict[str, dict], table: str) -> set[str]:

@@ -93,7 +93,7 @@ LOCKFILE_NAMES: set[str] = {
 # classify later.
 _URI_PATTERN = re.compile(
     r"\b("
-    r"postgres(?:ql)?|mysql|mariadb|mssql|sqlserver|oracle|redshift|snowflake|bigquery|"
+    r"postgres(?:ql)?|mysql|mariadb|mssql|sqlserver|oracle|redshift|snowflake|bigquery|databricks|"
     r"mongodb(?:\+srv)?|redis|rediss|memcached|cassandra|clickhouse|"
     r"kafka|amqp|amqps|nats|"
     r"s3|gs|gcs|az|azure|wasb|wasbs|abfs|abfss|"
@@ -142,6 +142,7 @@ def _scheme_to_kind(scheme: str) -> str:
         "redshift": "REDSHIFT",
         "snowflake": "SNOWFLAKE",
         "bigquery": "BIGQUERY",
+        "databricks": "DATABRICKS",
         "mongodb": "MONGODB",
         "redis": "REST_API", "rediss": "REST_API",  # treat as endpoint for now
         "kafka": "KAFKA",
