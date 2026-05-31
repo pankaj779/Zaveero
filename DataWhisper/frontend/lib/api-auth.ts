@@ -1,7 +1,9 @@
 /** Browser-side calls to the DataWhisper FastAPI backend (uses NEXT_PUBLIC_API_URL + CORS). */
 
+import { normalizeApiBase } from "@/lib/api-url";
+
 export function getPublicApiBase(): string {
-  return (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  return normalizeApiBase(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000");
 }
 
 export type AuthTokenResponse = {

@@ -12,7 +12,7 @@ $endpoints = @{
   "AgentOps web"      = if ($env:AGENTOPS_WEB) { $env:AGENTOPS_WEB } else { "https://agentops.zaavero.com" }
   "AgentOps API"      = if ($env:AGENTOPS_API) { "$($env:AGENTOPS_API)/api/health" } else { "https://agentops-api.zaavero.com/api/health" }
   "DataWhisper web"   = if ($env:DATAWHISPER_WEB) { $env:DATAWHISPER_WEB } else { "https://datawhisper.zaavero.com" }
-  "DataWhisper API"   = if ($env:DATAWHISPER_API) { "$($env:DATAWHISPER_API)/health" } else { "https://datawhisper-api.zaavero.com/health" }
+  "DataWhisper API"   = if ($env:DATAWHISPER_API) { "$($env:DATAWHISPER_API)/health" } else { "https://datawhisper-api.onrender.com/health" }
 }
 
 Write-Host "=== Zaavero production smoke test ===" -ForegroundColor Cyan

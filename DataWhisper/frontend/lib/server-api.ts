@@ -1,3 +1,5 @@
+import { normalizeApiBase } from "@/lib/api-url";
+
 /**
  * Base URL for the FastAPI backend when called from Next.js **server** code
  * (Route Handlers, Server Components, next-auth authorize).
@@ -11,5 +13,5 @@ export function getBackendUrl(): string {
     process.env.INTERNAL_API_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
     "http://localhost:8000";
-  return raw.replace(/\/$/, "");
+  return normalizeApiBase(raw);
 }
