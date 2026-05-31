@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from app.services.sql_row_limit import apply_execution_limit
+from app.services.sql_catalog_rewrite import prepare_sql_for_execution
 from app.utils.db_clients import execute_readonly
 
 
@@ -93,7 +93,7 @@ async def run_query(
     chart_preference: str | None = None,
 ) -> dict[str, Any]:
     ct = conn_type.upper()
-    safe_sql = apply_execution_limit(sql, max_rows, dialect=ct)
+    safe_sql = prepare_sql_for_execution(sql, max_rows, dialect=ct)
     columns, rows = await execute_readonly(conn_type, config, safe_sql, max_rows=max_rows)
     safe_rows = [_json_safe_row(r) for r in rows]
     chart = resolve_chart_type(columns, safe_rows, chart_preference)

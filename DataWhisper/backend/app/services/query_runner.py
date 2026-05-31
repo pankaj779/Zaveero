@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from app.db import prisma
 from app.schemas.execute import ExecuteRequest, ExecuteResponse
 from app.services.ai_generator import explain_sql
+from app.services.catalog_queries import list_tables_from_metadata
 from app.services.confidence import compute_confidence
 from app.services.db_executor import run_query
 from app.services.query_cache import get_cached, set_cached
@@ -59,6 +60,42 @@ async def run_execute_request(user, body: ExecuteRequest, *, persist_history: bo
             raise HTTPException(status_code=400, detail={"message": "SQL validation failed", "errors": errs})
 
     cfg = driver_config(conn_cfg)
+
+    # Catalog questions ("list tables in schema") — answer from scanned metadata when possible
+    catalog_result = list_tables_from_metadata(
+        meta, question=body.question, sql=body.sql, max_rows=500
+    )
+    if catalog_result is not None:
+        explanation = catalog_result.get("explanation") or ""
+        conf = 0.95 if catalog_result["row_count"] else 0.7
+        insight = generate_insight(body.question, catalog_result["columns"], catalog_result["rows"])
+        if persist_history:
+            await prisma.queryhistory.create(
+                data={
+                    "workspaceId": str(user.workspaceId),
+                    "userId": str(user.id),
+                    "connectionId": str(conn.id),
+                    "metadataVersionId": str(mv.id),
+                    "question": body.question or "",
+                    "sqlText": body.sql,
+                    "resultRowCount": catalog_result["row_count"],
+                    "chartType": catalog_result["chart_type"],
+                    "explanation": explanation or None,
+                    "confidenceScore": conf,
+                }
+            )
+            await record_execution(str(user.id), str(user.workspaceId))
+        return ExecuteResponse(
+            columns=catalog_result["columns"],
+            rows=catalog_result["rows"],
+            chart_type=catalog_result["chart_type"],
+            row_count=catalog_result["row_count"],
+            sql=body.sql,
+            explanation=explanation or None,
+            insight=insight or None,
+            confidence=conf,
+            metadata_version_id=mv.id,
+        )
 
     # Check cache first
     cached = get_cached(str(conn.id), body.sql)
