@@ -4,10 +4,13 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
+import { postAuth, sessionCredentialsFromAuth, wakeBackend } from "@/lib/api-auth";
+
 function SsoContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState("");
+  const [status, setStatus] = useState("Connecting to DataWhisper…");
 
   useEffect(() => {
     const token = searchParams.get("zaavero_token");
@@ -17,11 +20,25 @@ function SsoContent() {
     }
 
     (async () => {
-      const result = await signIn("credentials", {
-        zaaveroToken: token,
+      setStatus("Waking API server (first launch may take up to a minute)…");
+      await wakeBackend();
+      setStatus("Signing you in via Zaavero…");
+
+      const result = await postAuth("/auth/zaavero-sso", { token });
+      if (!result.ok) {
+        setError(
+          result.detail === "Invalid or expired Zaavero token"
+            ? "SSO sign-in failed. Try launching again from Zaavero."
+            : result.detail
+        );
+        return;
+      }
+
+      const signInResult = await signIn("credentials", {
+        ...sessionCredentialsFromAuth(result.data),
         redirect: false,
       });
-      if (result?.error) {
+      if (signInResult?.error) {
         setError("SSO sign-in failed. Try launching again from Zaavero.");
         return;
       }
@@ -42,7 +59,7 @@ function SsoContent() {
         ) : (
           <>
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-[hsl(var(--primary))] border-t-transparent" />
-            <p className="text-[hsl(var(--muted-foreground))]">Signing you in via Zaavero…</p>
+            <p className="text-[hsl(var(--muted-foreground))]">{status}</p>
           </>
         )}
       </div>

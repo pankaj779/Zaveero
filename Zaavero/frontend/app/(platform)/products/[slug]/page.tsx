@@ -73,7 +73,7 @@ export default function ProductDetailPage() {
       setLaunchHintMsg(launchHint(data.launch_url));
       const opened = window.open(data.launch_url, "_blank", "noopener,noreferrer");
       if (!opened) {
-        setLaunchError("Your browser blocked the popup. Use the Open product link below.");
+        window.location.assign(data.launch_url);
       }
     },
     onError: (err: Error) => {

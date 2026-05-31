@@ -3,6 +3,16 @@ import CredentialsProvider from "next-auth/providers/credentials";
 
 import { getBackendUrl } from "@/lib/server-api";
 
+const BACKEND_FETCH_MS = 120_000;
+
+async function fetchBackend(path: string, init?: RequestInit): Promise<Response> {
+  const url = `${getBackendUrl()}${path}`;
+  return fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(BACKEND_FETCH_MS),
+  });
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -11,13 +21,36 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
         zaaveroToken: { label: "Zaavero SSO", type: "text" },
+        accessToken: { label: "Access token", type: "text" },
+        userId: { label: "User id", type: "text" },
+        role: { label: "Role", type: "text" },
+        workspaceId: { label: "Workspace id", type: "text" },
+        workspaceSlug: { label: "Workspace slug", type: "text" },
+        workspaceName: { label: "Workspace name", type: "text" },
       },
       async authorize(credentials) {
+        if (
+          credentials?.accessToken &&
+          credentials?.email &&
+          credentials?.userId &&
+          credentials?.workspaceId
+        ) {
+          return {
+            id: credentials.userId,
+            email: credentials.email,
+            role: credentials.role || "ANALYST",
+            accessToken: credentials.accessToken,
+            workspaceId: credentials.workspaceId,
+            workspaceSlug: credentials.workspaceSlug || "",
+            workspaceName: credentials.workspaceName || "",
+          };
+        }
+
         if (credentials?.zaaveroToken) {
           const ssoUrl = `${getBackendUrl()}/auth/zaavero-sso`;
           let res: Response;
           try {
-            res = await fetch(ssoUrl, {
+            res = await fetchBackend("/auth/zaavero-sso", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ token: credentials.zaaveroToken }),
@@ -43,7 +76,7 @@ export const authOptions: NextAuthOptions = {
         const loginUrl = `${getBackendUrl()}/auth/login`;
         let res: Response;
         try {
-          res = await fetch(loginUrl, {
+          res = await fetchBackend("/auth/login", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

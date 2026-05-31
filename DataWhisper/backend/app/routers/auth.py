@@ -196,7 +196,7 @@ async def zaavero_sso(body: dict):
     settings = get_settings()
     platform_url = settings.zaavero_api_url.rstrip("/")
     try:
-        resp = httpx.post(f"{platform_url}/auth/sso/verify", json={"token": token}, timeout=10.0)
+        resp = httpx.post(f"{platform_url}/auth/sso/verify", json={"token": token}, timeout=60.0)
     except Exception:
         raise HTTPException(status_code=502, detail="Could not reach Zaavero platform")
 

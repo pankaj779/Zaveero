@@ -10,8 +10,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ThemeToggleButton } from "@/components/theme-toggle";
+import {
+  getPublicApiBase,
+  postAuth,
+  sessionCredentialsFromAuth,
+  wakeBackend,
+} from "@/lib/api-auth";
 
-const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+const apiBase = getPublicApiBase();
 
 type Mode = "login" | "register" | "join";
 
@@ -74,38 +80,73 @@ function LoginContent() {
     setError(null);
     setLoading(true);
     try {
+      await wakeBackend();
+
       if (mode === "register") {
-        const res = await fetch("/api/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, workspace_name: workspaceName }),
+        const result = await postAuth("/auth/register", {
+          email,
+          password,
+          workspace_name: workspaceName,
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setError(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
+        if (!result.ok) {
+          setError(result.detail);
           setLoading(false);
           return;
         }
+        const r = await signIn("credentials", {
+          ...sessionCredentialsFromAuth(result.data),
+          redirect: false,
+        });
+        if (r?.error) {
+          setError("Registered but session failed. Try signing in.");
+          setLoading(false);
+          return;
+        }
+        router.push("/dashboard");
+        router.refresh();
+        return;
       }
+
       if (mode === "join") {
         if (lookup && !lookup.allow_self_serve_join) {
           setError("This workspace only accepts invited accounts. Your admin must create your login under Team & access.");
           setLoading(false);
           return;
         }
-        const res = await fetch("/api/join", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, workspace_slug: workspaceSlug.trim().toLowerCase() }),
+        const result = await postAuth("/auth/join", {
+          email,
+          password,
+          workspace_slug: workspaceSlug.trim().toLowerCase(),
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setError(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
+        if (!result.ok) {
+          setError(result.detail);
           setLoading(false);
           return;
         }
+        const r = await signIn("credentials", {
+          ...sessionCredentialsFromAuth(result.data),
+          redirect: false,
+        });
+        if (r?.error) {
+          setError("Joined but session failed. Try signing in.");
+          setLoading(false);
+          return;
+        }
+        router.push("/dashboard");
+        router.refresh();
+        return;
       }
-      const r = await signIn("credentials", { email, password, redirect: false });
+
+      const result = await postAuth("/auth/login", { email, password });
+      if (!result.ok) {
+        setError(result.detail === "Invalid credentials" ? "Invalid email or password" : result.detail);
+        setLoading(false);
+        return;
+      }
+      const r = await signIn("credentials", {
+        ...sessionCredentialsFromAuth(result.data),
+        redirect: false,
+      });
       if (r?.error) {
         setError("Invalid email or password");
         setLoading(false);
