@@ -49,8 +49,8 @@ const configExamples: Record<string, string> = {
   "host": "adb-xxx.azuredatabricks.net",
   "http_path": "/sql/1.0/warehouses/xxxx",
   "token": "dapi...",
-  "catalog": "hive_metastore",
-  "schema": "default"
+  "catalog": "agentops",
+  "schema": "*"
 }`,
   SQLSERVER: `{
   "host": "host.docker.internal",

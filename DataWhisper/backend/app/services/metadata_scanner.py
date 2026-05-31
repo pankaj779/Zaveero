@@ -401,6 +401,66 @@ def _scan_bigquery_sync(config: dict[str, Any]) -> dict[str, Any]:
     return {"engine": "bigquery", "tables": tables_out}
 
 
+def _databricks_schemas_to_scan(cur, catalog: str, schema: str) -> list[str]:
+    """Return schema names to scan. schema='*' scans every schema in the catalog."""
+    s = (schema or "default").strip()
+    if s.lower() in ("*", "all", "__all__"):
+        cur.execute(f"SHOW SCHEMAS IN {catalog}")
+        names: list[str] = []
+        for row in cur.fetchall():
+            if not row:
+                continue
+            # Unity Catalog: (schemaName,) or (databaseName, schemaName)
+            name = str(row[-1]).strip()
+            if name and name.lower() not in ("information_schema", "sys"):
+                names.append(name)
+        return names or ["default"]
+    return [s]
+
+
+def _scan_databricks_table(
+    cur,
+    catalog: str,
+    schema: str,
+    tname: str,
+    tables_out: list[dict[str, Any]],
+) -> None:
+    full = f"{catalog}.{schema}.{tname}"
+    cols = []
+    try:
+        cur.execute(f"DESCRIBE TABLE {catalog}.{schema}.{tname}")
+        for r in cur.fetchall():
+            if isinstance(r, (list, tuple)) and len(r) >= 2:
+                cols.append({"name": r[0], "type": str(r[1]), "nullable": True})
+    except Exception:
+        cols = []
+    sample = []
+    try:
+        cur.execute(f"SELECT * FROM {catalog}.{schema}.{tname} LIMIT 5")
+        colnames = [c[0] for c in cur.description] if cur.description else []
+        sample = _json_safe_sample(
+            [dict(zip(colnames, rr, strict=False)) for rr in cur.fetchall()]
+        )
+    except Exception:
+        sample = []
+    row_count = None
+    try:
+        cur.execute(f"SELECT COUNT(*) FROM {catalog}.{schema}.{tname}")
+        row_count = cur.fetchone()[0]
+    except Exception:
+        row_count = None
+    tables_out.append(
+        {
+            "name": full,
+            "columns": cols,
+            "primary_key": [],
+            "foreign_keys": [],
+            "sample_rows": sample,
+            "row_count": row_count,
+        }
+    )
+
+
 def _scan_databricks_sync(config: dict[str, Any]) -> dict[str, Any]:
     from databricks import sql as dbsql
 
@@ -409,51 +469,24 @@ def _scan_databricks_sync(config: dict[str, Any]) -> dict[str, Any]:
         http_path=config["http_path"],
         access_token=config["token"],
     )
-    catalog = config.get("catalog", "hive_metastore")
-    schema = config.get("schema", "default")
+    catalog = config.get("catalog") or "hive_metastore"
+    schema = config.get("schema") or "default"
     tables_out: list[dict[str, Any]] = []
     try:
         cur = conn.cursor()
-        cur.execute(f"SHOW TABLES IN {catalog}.{schema}")
-        rows = cur.fetchall()
-        for row in rows:
-            tname = row[1] if len(row) > 1 else row[0]
-            full = f"{catalog}.{schema}.{tname}"
-            cols = []
+        for sch in _databricks_schemas_to_scan(cur, catalog, schema):
             try:
-                cur.execute(f"DESCRIBE TABLE {catalog}.{schema}.{tname}")
-                for r in cur.fetchall():
-                    if isinstance(r, (list, tuple)) and len(r) >= 2:
-                        cols.append({"name": r[0], "type": str(r[1]), "nullable": True})
+                cur.execute(f"SHOW TABLES IN {catalog}.{sch}")
             except Exception:
-                cols = []
-            sample = []
-            try:
-                cur.execute(f"SELECT * FROM {catalog}.{schema}.{tname} LIMIT 5")
-                colnames = [c[0] for c in cur.description] if cur.description else []
-                sample = _json_safe_sample(
-                    [dict(zip(colnames, rr, strict=False)) for rr in cur.fetchall()]
-                )
-            except Exception:
-                sample = []
-            row_count = None
-            try:
-                cur.execute(f"SELECT COUNT(*) FROM {catalog}.{schema}.{tname}")
-                row_count = cur.fetchone()[0]
-            except Exception:
-                row_count = None
-            tables_out.append(
-                {
-                    "name": full,
-                    "columns": cols,
-                    "primary_key": [],
-                    "foreign_keys": [],
-                    "sample_rows": sample,
-                    "row_count": row_count,
-                }
-            )
+                continue
+            rows = cur.fetchall()
+            for row in rows:
+                tname = str(row[1] if len(row) > 1 else row[0]).strip()
+                if not tname:
+                    continue
+                _scan_databricks_table(cur, catalog, sch, tname, tables_out)
         cur.close()
-        return {"engine": "databricks", "tables": tables_out}
+        return {"engine": "databricks", "catalog": catalog, "tables": tables_out}
     finally:
         conn.close()
 

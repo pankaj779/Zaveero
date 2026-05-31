@@ -47,10 +47,15 @@ def is_catalog_list_intent(question: str | None, sql: str | None = None) -> bool
     return bool(_CATALOG_QUESTION.search(question))
 
 
+_GENERIC_SCOPE_WORDS = frozenset({"schema", "database", "catalog", "db", "the"})
+
+
 def _schema_scope_from_text(text: str) -> str | None:
     m = _SCHEMA_IN_QUESTION.search(text)
     if m:
-        return _clean_ident(m.group(1))
+        scope = _clean_ident(m.group(1))
+        if scope.lower() not in _GENERIC_SCOPE_WORDS:
+            return scope
     # "tables in agent_logs" / "in agentops.agent_logs"
     m2 = re.search(
         r"\btables?\s+in\s+(?:the\s+)?[`\"']?([\w.-]+(?:\.[\w.-]+)*)[`\"']?",
@@ -58,7 +63,9 @@ def _schema_scope_from_text(text: str) -> str | None:
         re.IGNORECASE,
     )
     if m2:
-        return _clean_ident(m2.group(1))
+        scope = _clean_ident(m2.group(1))
+        if scope.lower() not in _GENERIC_SCOPE_WORDS:
+            return scope
     return None
 
 

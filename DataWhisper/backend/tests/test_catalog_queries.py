@@ -31,6 +31,18 @@ class TestCatalogQueries(unittest.TestCase):
         names = {r["full_name"] for r in out["rows"]}
         self.assertIn("agentops.agent_logs.events", names)
 
+    def test_generic_schema_phrase_lists_all(self):
+        meta = {
+            "tables": [
+                {"name": "agentops.agent_logs.a", "row_count": 1},
+                {"name": "agentops.agent_logs.b", "row_count": 2},
+            ]
+        }
+        out = list_tables_from_metadata(meta, question="List the tables in the schema")
+        self.assertIsNotNone(out)
+        assert out is not None
+        self.assertEqual(out["row_count"], 2)
+
 
 class TestSqlCatalogRewrite(unittest.TestCase):
     def test_show_rewritten_for_databricks(self):

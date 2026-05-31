@@ -338,10 +338,16 @@ def validate_sql(
             short = raw.split(".")[-1]
             norm = _normalize_table(short, known_tables)
         if not norm:
+            sample = sorted(known_tables)[:8]
+            hint = f" Available scanned tables: {', '.join(sample)}"
+            if len(known_tables) > 8:
+                hint += f" (+{len(known_tables) - 8} more). Re-run metadata scan if a table is missing."
+            else:
+                hint += ". Re-run metadata scan on Connections if a table is missing."
             errors.append(
                 _err(
                     "UNKNOWN_TABLE",
-                    f"Table '{raw}' is not present in scanned metadata.",
+                    f"Table '{raw}' is not present in scanned metadata.{hint}",
                     raw,
                 )
             )
