@@ -50,6 +50,8 @@ async def run_execute_request(user, body: ExecuteRequest, *, persist_history: bo
             detail="No tables remain after applying ai_data_scope. Adjust scope on this connection.",
         )
 
+    conversation_id = str(body.conversation_id) if body.conversation_id else None
+
     # Catalog/list-tables questions — answer from scanned metadata first (no warehouse round-trip)
     if is_catalog_list_intent(body.question, body.sql):
         catalog_result = list_tables_from_metadata(
@@ -66,6 +68,7 @@ async def run_execute_request(user, body: ExecuteRequest, *, persist_history: bo
                             "workspaceId": str(user.workspaceId),
                             "userId": str(user.id),
                             "connectionId": str(conn.id),
+                            "conversationId": conversation_id,
                             "metadataVersionId": str(mv.id),
                             "question": body.question or "",
                             "sqlText": body.sql,
@@ -132,6 +135,7 @@ async def run_execute_request(user, body: ExecuteRequest, *, persist_history: bo
                     "workspaceId": str(user.workspaceId),
                     "userId": str(user.id),
                     "connectionId": str(conn.id),
+                    "conversationId": conversation_id,
                     "metadataVersionId": str(mv.id),
                     "question": body.question or "",
                     "sqlText": body.sql,

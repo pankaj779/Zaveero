@@ -126,6 +126,8 @@ model QueryHistory {
   workspaceId         String   @map("workspace_id") @db.Uuid
   userId              String   @map("user_id") @db.Uuid
   connectionId        String   @map("connection_id") @db.Uuid
+  /// Groups turns in the same Chat session (New conversation starts a new id).
+  conversationId      String?  @map("conversation_id") @db.Uuid
   metadataVersionId   String?  @map("metadata_version_id") @db.Uuid
   question            String
   sqlText             String   @map("sql_text")
@@ -143,6 +145,7 @@ model QueryHistory {
   @@index([workspaceId, createdAt(sort: Desc)])
   @@index([userId])
   @@index([metadataVersionId])
+  @@index([conversationId, createdAt(sort: Desc)])
   @@map("query_history")
 }
 

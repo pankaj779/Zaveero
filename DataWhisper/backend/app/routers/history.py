@@ -32,6 +32,7 @@ async def list_history(
             "workspace_id": r.workspaceId,
             "user_id": r.userId,
             "connection_id": r.connectionId,
+            "conversation_id": r.conversationId,
             "metadata_version_id": r.metadataVersionId,
             "question": r.question,
             "sql_text": r.sqlText,

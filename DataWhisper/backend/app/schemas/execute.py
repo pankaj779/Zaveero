@@ -16,6 +16,9 @@ class ConversationTurn(BaseModel):
 class AiSqlRequest(BaseModel):
     connection_id: uuid.UUID
     question: str = Field(min_length=1, max_length=4000)
+    conversation_id: uuid.UUID | None = Field(
+        None, description="Client session id; groups workspace history into one chat thread",
+    )
     conversation_history: list[ConversationTurn] | None = Field(
         None, description="Previous turns for follow-up context"
     )
@@ -45,6 +48,9 @@ class ExecuteRequest(BaseModel):
     connection_id: uuid.UUID
     sql: str = Field(min_length=1, max_length=200_000)
     question: str | None = None
+    conversation_id: uuid.UUID | None = Field(
+        None, description="Client session id; ties this run to the active chat conversation",
+    )
     chart_preference: str | None = Field(
         None, description="auto | bar | line | doughnut | pivot | table | kpi"
     )

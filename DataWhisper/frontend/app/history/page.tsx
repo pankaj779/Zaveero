@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 type Hist = {
   id: string;
   connection_id: string;
+  conversation_id?: string | null;
   question: string;
   sql_text: string;
   result_row_count: number;

@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
 
 import { ResultChart } from "@/components/result-chart";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ type Conn = { id: string; name: string; type: string };
 type Hist = {
   id: string;
   connection_id: string;
+  conversation_id?: string | null;
   question: string;
   sql_text: string;
   created_at: string;
@@ -23,6 +24,64 @@ type Hist = {
   confidence_score?: number | null;
   explanation?: string | null;
 };
+
+type HistorySession = {
+  key: string;
+  conversationId: string | null;
+  label: string;
+  turnCount: number;
+  startedAt: string;
+  items: Hist[];
+  isCurrent: boolean;
+};
+
+function newConversationId(): string {
+  return crypto.randomUUID();
+}
+
+function groupHistorySessions(items: Hist[], currentConversationId: string | null): HistorySession[] {
+  const convMap = new Map<string, Hist[]>();
+  const legacy: Hist[] = [];
+
+  for (const h of items) {
+    if (!h.conversation_id) legacy.push(h);
+    else {
+      const arr = convMap.get(h.conversation_id) || [];
+      arr.push(h);
+      convMap.set(h.conversation_id, arr);
+    }
+  }
+
+  const sessions: HistorySession[] = [];
+  for (const [cid, list] of convMap) {
+    const oldest = list[list.length - 1];
+    sessions.push({
+      key: cid,
+      conversationId: cid,
+      label: oldest?.question || "Conversation",
+      turnCount: list.length,
+      startedAt: oldest?.created_at || list[0].created_at,
+      items: list,
+      isCurrent: cid === currentConversationId,
+    });
+  }
+  sessions.sort(
+    (a, b) => new Date(b.items[0].created_at).getTime() - new Date(a.items[0].created_at).getTime()
+  );
+
+  if (legacy.length) {
+    sessions.push({
+      key: "__legacy__",
+      conversationId: null,
+      label: "Earlier (ungrouped)",
+      turnCount: legacy.length,
+      startedAt: legacy[legacy.length - 1].created_at,
+      items: legacy,
+      isCurrent: false,
+    });
+  }
+  return sessions;
+}
 
 function isChatHistoryEntry(h: Hist): boolean {
   const sql = (h.sql_text || "").trim();
@@ -127,10 +186,12 @@ export default function ChatPage() {
   const [saveOpen, setSaveOpen] = useState(false);
   const [lastQuestion, setLastQuestion] = useState("");
   const [copied, setCopied] = useState(false);
+  const [conversationId, setConversationId] = useState(() => newConversationId());
   const [conversationHistory, setConversationHistory] = useState<
     { role: string; question?: string; sql?: string; summary?: string }[]
   >([]);
   const [historyOpen, setHistoryOpen] = useState(true);
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(() => new Set());
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const sqlRef = useRef<HTMLTextAreaElement>(null);
   const viewer = session?.user?.role === "VIEWER";
@@ -140,6 +201,14 @@ export default function ChatPage() {
       setHistoryOpen(false);
     }
   }, []);
+
+  useEffect(() => {
+    setExpandedSessions((prev) => {
+      const next = new Set(prev);
+      if (conversationId) next.add(conversationId);
+      return next;
+    });
+  }, [conversationId]);
 
   const toggleHistoryPanel = useCallback(() => {
     setHistoryOpen((open) => {
@@ -164,6 +233,11 @@ export default function ChatPage() {
 
   const selectedConn = useMemo(() => connections.find((c) => c.id === connectionId), [connections, connectionId]);
 
+  const historySessions = useMemo(
+    () => groupHistorySessions(history, conversationId),
+    [history, conversationId]
+  );
+
   const runSQL = useCallback(
     async (sqlText: string, question: string, skipValidation: boolean) => {
       if (!connectionId || !sqlText.trim()) return;
@@ -175,6 +249,7 @@ export default function ChatPage() {
           method: "POST",
           body: JSON.stringify({
             connection_id: connectionId,
+            conversation_id: conversationId,
             sql: sqlText.trim(),
             question,
             chart_preference: pref === "auto" ? null : pref,
@@ -193,7 +268,7 @@ export default function ChatPage() {
         setLoading(false);
       }
     },
-    [connectionId, chartPref, liveChart, exec, token, qc]
+    [connectionId, conversationId, chartPref, liveChart, exec, token, qc]
   );
 
   async function onSend() {
@@ -215,6 +290,7 @@ export default function ChatPage() {
         method: "POST",
         body: JSON.stringify({
           connection_id: connectionId,
+          conversation_id: conversationId,
           question: q,
           chat_mode: chatMode,
           conversation_history: conversationHistory.slice(-6),
@@ -318,6 +394,7 @@ export default function ChatPage() {
   }
 
   function startNewConversation() {
+    setConversationId(newConversationId());
     setConversationHistory([]);
     setSql(null);
     setEditableSql("");
@@ -380,6 +457,35 @@ export default function ChatPage() {
     [token, viewer, runSQL]
   );
 
+  function toggleSessionExpand(key: string) {
+    setExpandedSessions((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function resumeSession(session: HistorySession) {
+    if (session.conversationId) setConversationId(session.conversationId);
+    const turns = [...session.items].reverse();
+    const hist: { role: string; question?: string; sql?: string; summary?: string }[] = [];
+    for (const h of turns) {
+      hist.push({ role: "user", question: h.question });
+      if (isChatHistoryEntry(h)) {
+        hist.push({ role: "assistant", summary: h.explanation || undefined });
+      } else {
+        hist.push({
+          role: "assistant",
+          sql: h.sql_text,
+          summary: h.explanation || undefined,
+        });
+      }
+    }
+    setConversationHistory(hist);
+    setExpandedSessions((prev) => new Set(prev).add(session.key));
+  }
+
   async function deleteHistoryItem(h: Hist, e: React.MouseEvent) {
     e.stopPropagation();
     if (!token || viewer) return;
@@ -432,57 +538,98 @@ export default function ChatPage() {
             </button>
           </div>
           <p className="px-4 pb-2 text-[10px] text-[hsl(var(--muted-foreground))]">
-            Click to replay. Chat answers reopen as text; queries re-run SQL.
+            Grouped by conversation. Click a turn to replay; expand a session header to resume follow-ups.
           </p>
-          <ul className="flex-1 overflow-auto px-3 pb-4 space-y-2 text-sm">
-            {history.length === 0 && (
+          <ul className="flex-1 overflow-auto px-3 pb-4 space-y-3 text-sm">
+            {historySessions.length === 0 && (
               <li className="text-xs text-[hsl(var(--muted-foreground))] px-1 py-4">
                 No history for this connection yet.
               </li>
             )}
-            {history.map((h) => (
-              <li key={h.id}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => void loadHistoryItem(h)}
-                  onKeyDown={(e) => e.key === "Enter" && void loadHistoryItem(h)}
-                  className={`group rounded-md border p-2 cursor-pointer transition-colors ${
-                    activeHistoryId === h.id
-                      ? "border-[hsl(var(--primary))]/50 bg-[hsl(var(--primary))]/10"
-                      : "border-[hsl(var(--border))]/60 hover:bg-[hsl(var(--muted))]/40"
-                  }`}
-                >
-                  <div className="flex gap-2 items-start">
-                    <p className="line-clamp-2 flex-1 text-[hsl(var(--foreground))]">
-                      {h.question || "(no question)"}
-                    </p>
-                    {!viewer && (
+            {historySessions.map((session) => {
+              const expanded = expandedSessions.has(session.key);
+              return (
+                <li key={session.key}>
+                  <div
+                    className={`rounded-md border text-[10px] ${
+                      session.isCurrent
+                        ? "border-[hsl(var(--primary))]/45 bg-[hsl(var(--primary))]/8"
+                        : "border-[hsl(var(--border))]/60"
+                    }`}
+                  >
+                    <div className="flex items-start gap-1 p-2">
                       <button
                         type="button"
-                        title="Delete from history"
-                        onClick={(e) => void deleteHistoryItem(h, e)}
-                        className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded text-[hsl(var(--muted-foreground))] hover:text-red-400 hover:bg-red-500/10 transition-opacity"
+                        onClick={() => toggleSessionExpand(session.key)}
+                        className="shrink-0 p-0.5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                        title={expanded ? "Collapse" : "Expand"}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        {expanded ? (
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        )}
                       </button>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => resumeSession(session)}
+                        className="flex-1 text-left min-w-0"
+                        title="Resume this conversation for follow-up questions"
+                      >
+                        <p className="line-clamp-2 font-medium text-[hsl(var(--foreground))] text-xs">
+                          {session.label}
+                        </p>
+                        <p className="text-[hsl(var(--muted-foreground))] mt-0.5">
+                          {session.turnCount} turn{session.turnCount !== 1 ? "s" : ""} ·{" "}
+                          {new Date(session.startedAt).toLocaleString()}
+                          {session.isCurrent && (
+                            <span className="text-[hsl(var(--primary))]"> · Active</span>
+                          )}
+                        </p>
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">
-                    {new Date(h.created_at).toLocaleString()}
-                    {isChatHistoryEntry(h) ? (
-                      <span> · chat answer</span>
-                    ) : (
-                      <span>
-                        {" "}
-                        · {h.result_row_count} row{h.result_row_count !== 1 ? "s" : ""}
-                      </span>
-                    )}
-                    {h.confidence_score != null && <span> · conf {pct(h.confidence_score)}</span>}
-                  </p>
-                </div>
-              </li>
-            ))}
+                  {expanded && (
+                    <ul className="mt-1 ml-3 pl-2 border-l border-[hsl(var(--border))]/50 space-y-1">
+                      {session.items.map((h, idx) => (
+                        <li key={h.id}>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => void loadHistoryItem(h)}
+                            onKeyDown={(e) => e.key === "Enter" && void loadHistoryItem(h)}
+                            className={`group rounded-md border p-2 cursor-pointer transition-colors ${
+                              activeHistoryId === h.id
+                                ? "border-[hsl(var(--primary))]/50 bg-[hsl(var(--primary))]/10"
+                                : "border-[hsl(var(--border))]/40 hover:bg-[hsl(var(--muted))]/35"
+                            }`}
+                          >
+                            <div className="flex gap-2 items-start">
+                              <span className="text-[9px] text-[hsl(var(--muted-foreground))] shrink-0 pt-0.5">
+                                #{session.turnCount - idx}
+                              </span>
+                              <p className="line-clamp-2 flex-1 text-xs text-[hsl(var(--foreground))]">
+                                {h.question || "(no question)"}
+                              </p>
+                              {!viewer && (
+                                <button
+                                  type="button"
+                                  title="Delete from history"
+                                  onClick={(e) => void deleteHistoryItem(h, e)}
+                                  className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded text-[hsl(var(--muted-foreground))] hover:text-red-400 hover:bg-red-500/10 transition-opacity"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </aside>
       )}
@@ -541,7 +688,9 @@ export default function ChatPage() {
         {conversationHistory.length > 0 && (
           <div className="flex items-center gap-2 text-[10px] text-[hsl(var(--muted-foreground))]">
             <span className="inline-block w-2 h-2 rounded-full bg-emerald-500/60" />
-            Conversation active — {Math.floor(conversationHistory.length / 2)} turn{Math.floor(conversationHistory.length / 2) !== 1 ? "s" : ""}. Follow-up questions will use prior context.
+            Conversation active — {Math.floor(conversationHistory.length / 2)} turn
+            {Math.floor(conversationHistory.length / 2) !== 1 ? "s" : ""} in this session. Follow-ups use prior
+            context. New conversation starts a separate thread in history.
           </div>
         )}
 
