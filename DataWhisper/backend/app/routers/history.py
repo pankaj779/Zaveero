@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.db import prisma
-from app.deps import get_current_user, require_workspace_admin
+from app.deps import get_current_user
 from app.services.roles import is_admin
 
 router = APIRouter(prefix="/history", tags=["history"])
@@ -46,11 +46,13 @@ async def list_history(
 
 
 @router.delete("/{history_id}")
-async def delete_history_entry(history_id: uuid.UUID, user=Depends(require_workspace_admin)):
-    row = await prisma.queryhistory.find_first(
-        where={"id": str(history_id), "workspaceId": str(user.workspaceId)}
-    )
+async def delete_history_entry(history_id: uuid.UUID, user=Depends(get_current_user)):
+    """Users may delete their own entries; admins may delete any entry in the workspace."""
+    where: dict = {"id": str(history_id), "workspaceId": str(user.workspaceId)}
+    if not is_admin(user.role):
+        where["userId"] = str(user.id)
+    row = await prisma.queryhistory.find_first(where=where)
     if not row:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=404, detail="History entry not found")
     await prisma.queryhistory.delete(where={"id": str(history_id)})
     return {"ok": True}

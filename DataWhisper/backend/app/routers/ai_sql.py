@@ -11,6 +11,7 @@ from app.services.rate_limiter import check_ai_rate
 from app.schemas.execute import AiSqlRequest, AiSqlResponse
 from app.services.ai_generator import explain_sql, generate_sql
 from app.services.confidence import compute_confidence
+from app.services.history_save import save_chat_history
 from app.services.metadata_chat import answer_catalog, answer_from_metadata, answer_row_counts
 from app.services.query_intent import classify_intent, is_metadata_stats_intent
 from app.services.data_scope import apply_ai_data_scope
@@ -135,6 +136,16 @@ async def generate_ai_sql(body: AiSqlRequest, user=Depends(require_sql_runner)):
             resource_id=str(body.connection_id),
             detail={"intent": "catalog", "chat_mode": body.chat_mode},
         )
+        await save_chat_history(
+            workspace_id=str(user.workspaceId),
+            user_id=str(user.id),
+            connection_id=str(conn.id),
+            metadata_version_id=str(mv.id),
+            question=body.question,
+            answer=catalog_ans["answer"],
+            confidence=0.95,
+            intent="catalog",
+        )
         return AiSqlResponse(
             response_mode="catalog",
             answer=catalog_ans["answer"],
@@ -156,6 +167,16 @@ async def generate_ai_sql(body: AiSqlRequest, user=Depends(require_sql_runner)):
             resource_type="connection",
             resource_id=str(body.connection_id),
             detail={"intent": "conversational", "chat_mode": body.chat_mode},
+        )
+        await save_chat_history(
+            workspace_id=str(user.workspaceId),
+            user_id=str(user.id),
+            connection_id=str(conn.id),
+            metadata_version_id=str(mv.id),
+            question=body.question,
+            answer=conv["answer"],
+            confidence=0.88,
+            intent="conversational",
         )
         return AiSqlResponse(
             response_mode="answer",

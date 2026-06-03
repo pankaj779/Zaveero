@@ -2,7 +2,8 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen, Trash2 } from "lucide-react";
 
 import { ResultChart } from "@/components/result-chart";
 import { Button } from "@/components/ui/button";
@@ -13,13 +14,27 @@ import { apiFetch } from "@/lib/api";
 type Conn = { id: string; name: string; type: string };
 type Hist = {
   id: string;
+  connection_id: string;
   question: string;
   sql_text: string;
   created_at: string;
   chart_type: string | null;
   result_row_count: number;
   confidence_score?: number | null;
+  explanation?: string | null;
 };
+
+function isChatHistoryEntry(h: Hist): boolean {
+  const sql = (h.sql_text || "").trim();
+  return sql.startsWith("-- chat:") || h.chart_type === "answer";
+}
+
+function isRunnableSql(sql: string): boolean {
+  const s = sql.trim();
+  if (!s || s.startsWith("--")) return false;
+  const first = s.split(/\s+/)[0]?.toUpperCase();
+  return ["SELECT", "WITH", "SHOW", "DESCRIBE", "DESC", "EXPLAIN"].includes(first || "");
+}
 
 type ChatMode = "auto" | "chat" | "query";
 
@@ -115,8 +130,24 @@ export default function ChatPage() {
   const [conversationHistory, setConversationHistory] = useState<
     { role: string; question?: string; sql?: string; summary?: string }[]
   >([]);
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null);
   const sqlRef = useRef<HTMLTextAreaElement>(null);
   const viewer = session?.user?.role === "VIEWER";
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("dw-history-open") === "0") {
+      setHistoryOpen(false);
+    }
+  }, []);
+
+  const toggleHistoryPanel = useCallback(() => {
+    setHistoryOpen((open) => {
+      const next = !open;
+      localStorage.setItem("dw-history-open", next ? "1" : "0");
+      return next;
+    });
+  }, []);
 
   const { data: connections = [] } = useQuery({
     queryKey: ["connections"],
@@ -221,6 +252,7 @@ export default function ChatPage() {
           { role: "user", question: q },
           { role: "assistant", summary: gen.answer ?? undefined },
         ]);
+        await qc.invalidateQueries({ queryKey: ["history", connectionId] });
         return;
       }
 
@@ -298,6 +330,68 @@ export default function ChatPage() {
     setClarification(null);
     setChartWarning(null);
     setInput("");
+    setActiveHistoryId(null);
+  }
+
+  const loadHistoryItem = useCallback(
+    async (h: Hist) => {
+      if (!token) return;
+      setActiveHistoryId(h.id);
+      setLastQuestion(h.question || "");
+      setError(null);
+      setClarification(null);
+      setChartWarning(null);
+      setCopied(false);
+      setSqlEdited(false);
+      setGenMeta({
+        confidence: h.confidence_score ?? null,
+        explanation: h.explanation ?? null,
+        validationErrors: undefined,
+      });
+
+      if (isChatHistoryEntry(h)) {
+        setChatAnswer(h.explanation || h.question || "No saved answer text.");
+        setFollowups([]);
+        setSql(null);
+        setEditableSql("");
+        setExec(null);
+        return;
+      }
+
+      const sqlText = (h.sql_text || "").trim();
+      if (!isRunnableSql(sqlText)) {
+        setError("This history entry has no runnable SQL. Re-ask the question below.");
+        setInput(h.question || "");
+        return;
+      }
+
+      setChatAnswer(null);
+      setFollowups([]);
+      setSql(sqlText);
+      setEditableSql(sqlText);
+      if (h.chart_type && CHART_TYPES.includes(h.chart_type as ChartPref)) {
+        setChartPref(h.chart_type as ChartPref);
+        setLiveChart(h.chart_type as ChartPref);
+      }
+      if (!viewer) {
+        await runSQL(sqlText, h.question || "History replay", true);
+      }
+    },
+    [token, viewer, runSQL]
+  );
+
+  async function deleteHistoryItem(h: Hist, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!token || viewer) return;
+    if (!window.confirm("Remove this item from workspace history?")) return;
+    try {
+      await apiFetch<{ ok: boolean }>(`/history/${h.id}`, token, { method: "DELETE" });
+      if (activeHistoryId === h.id) startNewConversation();
+      await qc.invalidateQueries({ queryKey: ["history", connectionId] });
+      await qc.invalidateQueries({ queryKey: ["history-all"] });
+    } catch (err) {
+      setError((err as Error).message);
+    }
   }
 
   const effectiveChart = exec
@@ -309,28 +403,91 @@ export default function ChatPage() {
   const currentSql = editableSql || sql || "";
 
   return (
-    <div className="flex min-h-[calc(100vh-0px)]">
-      <aside className="w-72 shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--muted))]/25 p-4 overflow-auto">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] mb-3">
-          Workspace history
-        </h2>
-        <ul className="space-y-2 text-sm">
-          {history.map((h) => (
-            <li
-              key={h.id}
-              className="rounded-md border border-[hsl(var(--border))]/60 p-2 cursor-pointer hover:bg-[hsl(var(--muted))]/40"
-            >
-              <p className="line-clamp-2 text-[hsl(var(--foreground))]">{h.question || "(no question)"}</p>
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">
-                {new Date(h.created_at).toLocaleString()} · {h.result_row_count} rows
-                {h.confidence_score != null && <span> · conf {pct(h.confidence_score)}</span>}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </aside>
+    <div className="flex min-h-[calc(100vh-0px)] relative">
+      {!historyOpen && (
+        <button
+          type="button"
+          onClick={toggleHistoryPanel}
+          title="Show workspace history"
+          className="absolute left-0 top-20 z-10 flex items-center gap-1 rounded-r-md border border-l-0 border-[hsl(var(--border))] bg-[hsl(var(--card))] px-2 py-2 text-[10px] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]/50 shadow-sm"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+          History
+        </button>
+      )}
 
-      <div className="flex-1 flex flex-col p-6 gap-4">
+      {historyOpen && (
+        <aside className="w-72 shrink-0 border-r border-[hsl(var(--border))] bg-[hsl(var(--muted))]/25 flex flex-col">
+          <div className="flex items-center justify-between gap-2 p-4 pb-2 border-b border-[hsl(var(--border))]/50">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
+              Workspace history
+            </h2>
+            <button
+              type="button"
+              onClick={toggleHistoryPanel}
+              title="Hide workspace history"
+              className="p-1 rounded hover:bg-[hsl(var(--muted))]/60 text-[hsl(var(--muted-foreground))]"
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="px-4 pb-2 text-[10px] text-[hsl(var(--muted-foreground))]">
+            Click to replay. Chat answers reopen as text; queries re-run SQL.
+          </p>
+          <ul className="flex-1 overflow-auto px-3 pb-4 space-y-2 text-sm">
+            {history.length === 0 && (
+              <li className="text-xs text-[hsl(var(--muted-foreground))] px-1 py-4">
+                No history for this connection yet.
+              </li>
+            )}
+            {history.map((h) => (
+              <li key={h.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => void loadHistoryItem(h)}
+                  onKeyDown={(e) => e.key === "Enter" && void loadHistoryItem(h)}
+                  className={`group rounded-md border p-2 cursor-pointer transition-colors ${
+                    activeHistoryId === h.id
+                      ? "border-[hsl(var(--primary))]/50 bg-[hsl(var(--primary))]/10"
+                      : "border-[hsl(var(--border))]/60 hover:bg-[hsl(var(--muted))]/40"
+                  }`}
+                >
+                  <div className="flex gap-2 items-start">
+                    <p className="line-clamp-2 flex-1 text-[hsl(var(--foreground))]">
+                      {h.question || "(no question)"}
+                    </p>
+                    {!viewer && (
+                      <button
+                        type="button"
+                        title="Delete from history"
+                        onClick={(e) => void deleteHistoryItem(h, e)}
+                        className="shrink-0 opacity-0 group-hover:opacity-100 p-1 rounded text-[hsl(var(--muted-foreground))] hover:text-red-400 hover:bg-red-500/10 transition-opacity"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-1">
+                    {new Date(h.created_at).toLocaleString()}
+                    {isChatHistoryEntry(h) ? (
+                      <span> · chat answer</span>
+                    ) : (
+                      <span>
+                        {" "}
+                        · {h.result_row_count} row{h.result_row_count !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                    {h.confidence_score != null && <span> · conf {pct(h.confidence_score)}</span>}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
+
+      <div className="flex-1 flex flex-col p-6 gap-4 min-w-0">
         {viewer && (
           <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm">
             View-only role: you can browse history and lineage but cannot run new queries.
