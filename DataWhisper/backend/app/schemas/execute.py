@@ -1,6 +1,8 @@
 import uuid
 from typing import Any
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -17,9 +19,19 @@ class AiSqlRequest(BaseModel):
     conversation_history: list[ConversationTurn] | None = Field(
         None, description="Previous turns for follow-up context"
     )
+    chat_mode: Literal["auto", "chat", "query"] = Field(
+        default="auto",
+        description="auto: route by intent | chat: metadata Q&A | query: always SQL+data",
+    )
 
 
 class AiSqlResponse(BaseModel):
+    response_mode: Literal["answer", "sql", "catalog"] = Field(
+        default="sql",
+        description="answer: conversational prose | sql: run query | catalog: table list",
+    )
+    answer: str | None = Field(None, description="Conversational response when response_mode=answer|catalog")
+    suggested_followups: list[str] | None = None
     sql: str | None = None
     clarification_needed: bool = False
     message: str | None = None

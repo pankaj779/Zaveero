@@ -21,7 +21,12 @@ type Hist = {
   confidence_score?: number | null;
 };
 
+type ChatMode = "auto" | "chat" | "query";
+
 type GenRes = {
+  response_mode?: "answer" | "sql" | "catalog";
+  answer?: string | null;
+  suggested_followups?: string[] | null;
   sql?: string | null;
   clarification_needed?: boolean;
   message?: string | null;
@@ -83,7 +88,10 @@ export default function ChatPage() {
   const { data: session } = useSession();
   const token = session?.accessToken;
   const [connectionId, setConnectionId] = useState("");
+  const [chatMode, setChatMode] = useState<ChatMode>("auto");
   const [input, setInput] = useState("");
+  const [chatAnswer, setChatAnswer] = useState<string | null>(null);
+  const [followups, setFollowups] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clarification, setClarification] = useState<string | null>(null);
@@ -166,6 +174,8 @@ export default function ChatPage() {
     setClarification(null);
     setExec(null);
     setGenMeta(null);
+    setChatAnswer(null);
+    setFollowups([]);
     setChartWarning(null);
     setCopied(false);
     setSqlEdited(false);
@@ -175,6 +185,7 @@ export default function ChatPage() {
         body: JSON.stringify({
           connection_id: connectionId,
           question: q,
+          chat_mode: chatMode,
           conversation_history: conversationHistory.slice(-6),
         }),
       });
@@ -192,7 +203,30 @@ export default function ChatPage() {
         await qc.invalidateQueries({ queryKey: ["usage"] });
         return;
       }
+      const mode = gen.response_mode || "sql";
+      if (mode === "answer" || mode === "catalog") {
+        setSql(null);
+        setEditableSql("");
+        setChatAnswer(gen.answer || gen.message || "No answer returned.");
+        setFollowups(gen.suggested_followups || []);
+        setGenMeta({
+          confidence: gen.confidence ?? null,
+          retries: gen.retry_attempts,
+          explanation: null,
+          validationErrors: undefined,
+        });
+        setInput("");
+        setConversationHistory((prev) => [
+          ...prev,
+          { role: "user", question: q },
+          { role: "assistant", summary: gen.answer ?? undefined },
+        ]);
+        return;
+      }
+
       if (!gen.sql) throw new Error("No SQL returned");
+      setChatAnswer(null);
+      setFollowups([]);
       setSql(gen.sql);
       setEditableSql(gen.sql);
       setGenMeta({
@@ -258,6 +292,8 @@ export default function ChatPage() {
     setSqlEdited(false);
     setExec(null);
     setGenMeta(null);
+    setChatAnswer(null);
+    setFollowups([]);
     setError(null);
     setClarification(null);
     setChartWarning(null);
@@ -517,17 +553,86 @@ export default function ChatPage() {
             </div>
           )}
 
-          {!exec && !sql && !editableSql && !error && !clarification && (
-            <p className="text-[hsl(var(--muted-foreground))] text-sm m-auto">
-              {selectedConn ? `Ask a question about ${selectedConn.name}.` : "Pick a connection first."}
+          {chatAnswer && !sql && (
+            <div className="space-y-4 flex-1">
+              <div className="rounded-lg border border-[hsl(var(--primary))]/25 bg-[hsl(var(--primary))]/5 p-4">
+                <p className="text-xs uppercase tracking-wide text-[hsl(var(--primary))] mb-2">
+                  {chatMode === "chat" ? "Answer" : "Data overview"}
+                </p>
+                <div className="text-sm whitespace-pre-wrap leading-relaxed">{chatAnswer}</div>
+              </div>
+              {genMeta?.confidence != null && (
+                <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Model confidence: {pct(genMeta.confidence)}
+                </p>
+              )}
+              {followups.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-[hsl(var(--muted-foreground))]">Try next:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {followups.map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => {
+                          setInput(f);
+                          setChatMode("query");
+                        }}
+                        className="text-xs px-3 py-1.5 rounded-full border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]/50 transition-colors"
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!exec && !sql && !editableSql && !error && !clarification && !chatAnswer && (
+            <p className="text-[hsl(var(--muted-foreground))] text-sm m-auto text-center max-w-md">
+              {selectedConn
+                ? "Ask about your data in plain English. Use Auto to let DataWhisper choose chat vs query, or pick a mode below."
+                : "Pick a connection first."}
             </p>
           )}
         </div>
 
         <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-xs text-[hsl(var(--muted-foreground))] mr-1">Mode:</span>
+            {(
+              [
+                ["auto", "Auto", "Smart routing — overview vs query"],
+                ["chat", "Chat", "Explain & describe — no SQL/charts"],
+                ["query", "Query", "Always run SQL and show data"],
+              ] as const
+            ).map(([id, label, title]) => (
+              <button
+                key={id}
+                type="button"
+                title={title}
+                disabled={viewer}
+                onClick={() => setChatMode(id)}
+                className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                  chatMode === id
+                    ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/15 text-[hsl(var(--foreground))]"
+                    : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]/40"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="flex gap-2 flex-wrap items-center">
             <Input
-              placeholder="e.g. Show total revenue by region last month"
+              placeholder={
+                chatMode === "chat"
+                  ? "e.g. What data do we have? Describe the tables."
+                  : chatMode === "query"
+                    ? "e.g. Show 10 rows from agentops_test_payload"
+                    : "e.g. Give me an overview of the data · or Show revenue by region"
+              }
               value={input}
               disabled={viewer}
               onChange={(e) => setInput(e.target.value)}
@@ -535,7 +640,7 @@ export default function ChatPage() {
               className="flex-1 min-w-[200px]"
             />
             <Button onClick={() => void onSend()} disabled={loading || !connectionId || viewer}>
-              {loading ? "Running…" : "Ask"}
+              {loading ? "Thinking…" : chatMode === "query" ? "Run query" : "Ask"}
             </Button>
             {exec && sql && !viewer && (
               <Button variant="outline" size="sm" type="button" onClick={() => setSaveOpen(true)}>

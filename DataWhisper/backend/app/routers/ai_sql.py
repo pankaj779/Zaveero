@@ -10,8 +10,10 @@ from app.services.audit import log_audit
 from app.services.rate_limiter import check_ai_rate
 from app.schemas.execute import AiSqlRequest, AiSqlResponse
 from app.services.ai_generator import explain_sql, generate_sql
-from app.services.catalog_queries import catalog_list_sql_for_ai, is_catalog_list_intent
 from app.services.confidence import compute_confidence
+from app.services.metadata_chat import answer_catalog, answer_from_metadata, answer_row_counts
+from app.services.query_intent import _METADATA_STATS
+from app.services.query_intent import classify_intent
 from app.services.data_scope import apply_ai_data_scope
 from app.services.lineage_read import get_merged_edges_from_mv
 from app.services.sql_validator import validate_sql
@@ -85,29 +87,6 @@ async def generate_ai_sql(body: AiSqlRequest, user=Depends(require_sql_runner)):
             "Relax allowed_table_prefixes or blocked_name_substrings, then scan again.",
         )
 
-    # List-tables / catalog questions — use scanned metadata directly (no LLM guessing)
-    if is_catalog_list_intent(body.question):
-        from app.services.catalog_queries import list_tables_from_metadata
-
-        catalog = list_tables_from_metadata(meta, question=body.question)
-        if catalog and catalog["row_count"] > 0:
-            sql = catalog_list_sql_for_ai(meta, body.question) or catalog["sql"]
-            await log_audit(
-                str(user.workspaceId),
-                str(user.id),
-                "ai.generate_sql",
-                resource_type="connection",
-                resource_id=str(body.connection_id),
-                detail={"attempts": 0, "confidence": 0.95, "catalog_list": True},
-            )
-            return AiSqlResponse(
-                sql=sql,
-                explanation=catalog["explanation"],
-                confidence=0.95,
-                clarification_needed=False,
-                retry_attempts=0,
-            )
-
     allowed_names = {t["name"] for t in meta.get("tables", []) if isinstance(t, dict) and t.get("name")}
     facts = list(mv.factTables) if isinstance(mv.factTables, list) else []
     dims = list(mv.dimensionTables) if isinstance(mv.dimensionTables, list) else []
@@ -145,6 +124,49 @@ async def generate_ai_sql(body: AiSqlRequest, user=Depends(require_sql_runner)):
     if body.conversation_history:
         conv_history = [t.model_dump() for t in body.conversation_history]
 
+    intent = classify_intent(body.question, body.chat_mode)
+
+    if intent == "catalog":
+        catalog_ans = answer_catalog(meta)
+        await log_audit(
+            str(user.workspaceId),
+            str(user.id),
+            "ai.chat_answer",
+            resource_type="connection",
+            resource_id=str(body.connection_id),
+            detail={"intent": "catalog", "chat_mode": body.chat_mode},
+        )
+        return AiSqlResponse(
+            response_mode="catalog",
+            answer=catalog_ans["answer"],
+            suggested_followups=catalog_ans.get("suggested_followups"),
+            confidence=0.95,
+            clarification_needed=False,
+            retry_attempts=0,
+        )
+
+    if intent == "conversational":
+        if is_metadata_stats_intent(body.question):
+            conv = answer_row_counts(meta)
+        else:
+            conv = answer_from_metadata(body.question, meta, lineage, conv_history)
+        await log_audit(
+            str(user.workspaceId),
+            str(user.id),
+            "ai.chat_answer",
+            resource_type="connection",
+            resource_id=str(body.connection_id),
+            detail={"intent": "conversational", "chat_mode": body.chat_mode},
+        )
+        return AiSqlResponse(
+            response_mode="answer",
+            answer=conv["answer"],
+            suggested_followups=conv.get("suggested_followups"),
+            confidence=0.88,
+            clarification_needed=False,
+            retry_attempts=0,
+        )
+
     validation_errors: list[dict[str, Any]] | None = None
     last_sql = ""
     attempts = 0
@@ -156,6 +178,7 @@ async def generate_ai_sql(body: AiSqlRequest, user=Depends(require_sql_runner)):
             raise HTTPException(status_code=502, detail=f"AI generation failed: {e}") from e
         if out.get("clarification_needed"):
             return AiSqlResponse(
+                response_mode="sql",
                 clarification_needed=True,
                 message=out.get("message"),
                 retry_attempts=attempts,
@@ -179,6 +202,7 @@ async def generate_ai_sql(body: AiSqlRequest, user=Depends(require_sql_runner)):
                 detail={"attempts": attempts, "confidence": conf},
             )
             return AiSqlResponse(
+                response_mode="sql",
                 sql=sql,
                 explanation=expl or None,
                 confidence=conf,
@@ -189,6 +213,7 @@ async def generate_ai_sql(body: AiSqlRequest, user=Depends(require_sql_runner)):
 
     fail_conf = compute_confidence(last_sql or "", meta, edges_core, False, validation_errors or [])
     return AiSqlResponse(
+        response_mode="sql",
         clarification_needed=True,
         message="Could not produce valid SQL after automatic retries. "
         + "; ".join(f"{e.get('code', 'ERR')}: {e.get('message', '')}" for e in (validation_errors or [])),
