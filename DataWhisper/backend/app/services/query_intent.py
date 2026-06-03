@@ -93,3 +93,7 @@ def classify_intent(question: str, chat_mode: str = "auto") -> Intent:
     if _CONVERSATIONAL.search(question):
         return "conversational"
     return "sql"
+
+
+def is_metadata_stats_intent(question: str) -> bool:
+    return bool(_METADATA_STATS.search(question))

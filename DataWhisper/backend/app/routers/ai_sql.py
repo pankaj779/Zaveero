@@ -12,8 +12,7 @@ from app.schemas.execute import AiSqlRequest, AiSqlResponse
 from app.services.ai_generator import explain_sql, generate_sql
 from app.services.confidence import compute_confidence
 from app.services.metadata_chat import answer_catalog, answer_from_metadata, answer_row_counts
-from app.services.query_intent import _METADATA_STATS
-from app.services.query_intent import classify_intent
+from app.services.query_intent import classify_intent, is_metadata_stats_intent
 from app.services.data_scope import apply_ai_data_scope
 from app.services.lineage_read import get_merged_edges_from_mv
 from app.services.sql_validator import validate_sql
