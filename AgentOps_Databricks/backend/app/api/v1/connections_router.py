@@ -78,10 +78,24 @@ def create_connection(body: ConnectionCreate, user=Depends(get_current_user)):
 @router.post("/test")
 def test_connection(body: ConnectionTest, user=Depends(get_current_user)):
     host = body.host.replace("https://", "").replace("http://", "").strip().rstrip("/")
-    tmp = Settings(
-        databricks_host=host,
-        databricks_http_path=body.http_path.strip(),
-        databricks_token=body.sql_token.strip(),
+    http_path = body.http_path.strip()
+    token = body.sql_token.strip()
+    if not host:
+        return {"ok": False, "message": "Databricks host is required"}
+    if not http_path:
+        return {"ok": False, "message": "SQL warehouse HTTP path is required"}
+    if not http_path.startswith("/"):
+        http_path = f"/{http_path}"
+    if not token:
+        return {"ok": False, "message": "SQL PAT is required"}
+
+    # Build settings from form fields (not empty server .env placeholders)
+    tmp = Settings.model_validate(
+        {
+            "databricks_host": host,
+            "databricks_http_path": http_path,
+            "databricks_token": token,
+        }
     )
     try:
         with sql_connection_with_settings(tmp) as conn:

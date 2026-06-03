@@ -155,3 +155,33 @@ def zaavero_sso(body: dict):
         "workspace": workspace,
         "has_connection": conn is not None,
     }
+
+
+@router.get("/integration-status")
+def integration_status():
+    """Public SSO wiring check (no secrets). Use after deploy to verify Zaavero ↔ AgentOps."""
+    import httpx
+
+    from app.config import get_settings
+
+    s = get_settings()
+    base = s.zaavero_api_url.rstrip("/")
+    reachable = False
+    detail = ""
+    try:
+        resp = httpx.get(f"{base}/health", timeout=8.0)
+        reachable = resp.status_code == 200
+        detail = f"HTTP {resp.status_code}"
+    except Exception as exc:
+        detail = str(exc)[:200]
+    return {
+        "sso_enabled": True,
+        "sso_frontend_path": "/sso/zaavero",
+        "zaavero_api_url": base,
+        "zaavero_api_reachable": reachable,
+        "zaavero_check_detail": detail,
+        "hint": (
+            "Launch from Zaavero → Products → AgentOps. "
+            "Zaavero needs AGENTOPS_LAUNCH_URL pointing at this app's /sso/zaavero URL."
+        ),
+    }

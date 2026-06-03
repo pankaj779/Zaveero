@@ -24,8 +24,14 @@ export function ConnectView() {
     setTesting(true)
     setTestResult(null)
     setError('')
+    const cleanHost = host.replace(/^https?:\/\//i, '').trim().replace(/\/$/, '')
+    const cleanPath = httpPath.trim().startsWith('/') ? httpPath.trim() : `/${httpPath.trim()}`
     try {
-      const r = await testConnection({ host, http_path: httpPath, sql_token: sqlToken })
+      const r = await testConnection({
+        host: cleanHost,
+        http_path: cleanPath,
+        sql_token: sqlToken.trim(),
+      })
       setTestResult(r.ok ? 'Connection successful' : r.message)
     } catch (e) {
       setTestResult(e instanceof Error ? e.message : 'Test failed')

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         env_file=str(BACKEND_ROOT / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     databricks_host: str = Field(

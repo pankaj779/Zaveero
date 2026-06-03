@@ -33,14 +33,20 @@ def sql_connection_with_settings(s) -> Iterator:
         raise RuntimeError(
             "databricks-sql-connector is not installed. pip install databricks-sql-connector"
         ) from _import_error
-    if not s.databricks_host or not s.databricks_http_path:
-        raise ValueError("DATABRICKS_HOST and DATABRICKS_HTTP_PATH must be set")
-    if not s.databricks_token:
-        raise ValueError("DATABRICKS_TOKEN is not set")
+    host = (getattr(s, "databricks_host", None) or "").strip()
+    http_path = (getattr(s, "databricks_http_path", None) or "").strip()
+    token = (getattr(s, "databricks_token", None) or "").strip()
+    if not host or not http_path:
+        raise ValueError(
+            "Databricks host and SQL warehouse HTTP path are required. "
+            "Enter them on the Connect screen (server .env defaults are optional)."
+        )
+    if not token:
+        raise ValueError("SQL personal access token is required")
     conn = dbsql.connect(
-        server_hostname=s.databricks_host,
-        http_path=s.databricks_http_path,
-        access_token=s.databricks_token,
+        server_hostname=host,
+        http_path=http_path,
+        access_token=token,
     )
     try:
         yield conn
