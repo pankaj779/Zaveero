@@ -116,12 +116,22 @@ def zaavero_sso(body: dict):
     settings = get_settings()
     platform_url = settings.zaavero_api_url.rstrip("/")
     try:
-        resp = httpx.post(f"{platform_url}/auth/sso/verify", json={"token": token}, timeout=10.0)
-    except Exception:
-        raise HTTPException(status_code=502, detail="Could not reach Zaavero platform")
+        resp = httpx.post(f"{platform_url}/auth/sso/verify", json={"token": token}, timeout=15.0)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not reach Zaavero API at {platform_url}: {exc!s}"[:300],
+        ) from exc
 
     if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid or expired Zaavero token")
+        detail = "Invalid or expired Zaavero token"
+        try:
+            body = resp.json()
+            if isinstance(body.get("detail"), str):
+                detail = body["detail"]
+        except Exception:
+            pass
+        raise HTTPException(status_code=401, detail=detail)
 
     data = resp.json()
     email = str(data.get("email") or "").lower()

@@ -65,7 +65,18 @@ export function LoginView() {
       setAuth(session.access_token, session.user)
       navigate(session.has_connection ? '/' : '/connect')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed')
+      const msg = err instanceof Error ? err.message : 'Authentication failed'
+      if (mode === 'register' && msg.toLowerCase().includes('already registered')) {
+        setError(
+          'This email is already registered in AgentOps. Sign in with the password you used when you created the workspace, or launch from Zaavero (recommended).'
+        )
+      } else if (mode === 'login' && msg.toLowerCase().includes('invalid email or password')) {
+        setError(
+          'Invalid email or password for AgentOps. This is not your Zaavero password unless you set it here. Try launching from Zaavero, or use the password from when you first created this AgentOps workspace.'
+        )
+      } else {
+        setError(msg)
+      }
     } finally {
       setLoading(false)
     }
@@ -79,7 +90,21 @@ export function LoginView() {
           {mode === 'login' ? 'Sign in to monitor your Databricks agents' : 'Create your workspace'}
         </p>
 
-        <form onSubmit={submit} className="mt-8 space-y-4">
+        <div className="mt-4 rounded-lg border border-[var(--accent)]/30 bg-[var(--accent)]/10 p-3 text-sm">
+          <p className="font-medium text-[var(--text)]">Recommended: sign in via Zaavero</p>
+          <p className="mt-1 text-[var(--muted)] text-xs leading-relaxed">
+            AgentOps uses its own login database (separate from your Zaavero password). If you use Zaavero,
+            launch AgentOps from <strong>Products → AgentOps</strong> — no second password needed.
+          </p>
+          <a
+            href="https://www.zaavero.com"
+            className="mt-2 inline-block text-xs font-medium text-[var(--accent)] hover:underline"
+          >
+            Go to Zaavero →
+          </a>
+        </div>
+
+        <form onSubmit={submit} className="mt-6 space-y-4">
           {mode === 'register' && (
             <>
               <Field label="Full name" value={name} onChange={setName} required />
