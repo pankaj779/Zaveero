@@ -126,14 +126,20 @@ export function ConnectView() {
 
           <Section title="Inference logging">
             <Input
-              label="Inference schema (catalog.schema)"
+              label="Inference location"
               value={inferenceSchema}
               onChange={setInferenceSchema}
-              placeholder="agentops.agent_logs"
+              placeholder="agentops.agent_logs or agentops.agent_logs.my_agent_payload"
+              hint="catalog.schema = all payload tables in schema; catalog.schema.table = one table only"
             />
             <div className="grid grid-cols-2 gap-4">
               <Input label="Time column" value={timeColumn} onChange={setTimeColumn} />
-              <Input label="Table suffix" value={tableSuffix} onChange={setTableSuffix} />
+              <Input
+                label="Table suffix (schema mode only)"
+                value={tableSuffix}
+                onChange={setTableSuffix}
+                hint={inferenceSchema.trim().split('.').length >= 3 ? 'Ignored when a full table path is set' : undefined}
+              />
             </div>
           </Section>
 

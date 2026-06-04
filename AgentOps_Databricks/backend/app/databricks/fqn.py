@@ -25,6 +25,22 @@ def validate_schema_fqn(s: str) -> bool:
     return all(p and bool(_SEG.match(p)) for p in parts)
 
 
+def parse_inference_location(raw: str) -> tuple[str | None, str | None]:
+    """Map user input to (table_fqn, schema_fqn).
+
+    - ``catalog.schema.table`` → single-table monitoring
+    - ``catalog.schema`` → discover payload tables in that schema
+    """
+    s = (raw or "").strip()
+    if not s:
+        return None, None
+    if validate_fqn(s):
+        return s, None
+    if validate_schema_fqn(s):
+        return None, s
+    return None, None
+
+
 def quote_fqn(fqn: str) -> str:
     f = fqn.strip()
     if not validate_fqn(f):

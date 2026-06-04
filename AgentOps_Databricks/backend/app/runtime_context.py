@@ -6,6 +6,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 from app.config import Settings
+from app.databricks.fqn import parse_inference_location
 
 _runtime_settings: ContextVar[Settings | None] = ContextVar("runtime_settings", default=None)
 _current_connection_id: ContextVar[str | None] = ContextVar("current_connection_id", default=None)
@@ -33,6 +34,15 @@ def connection_to_settings(conn: ConnectionRecord, base: Settings | None = None)
     """Build Settings from a stored Databricks connection."""
     base = base or Settings()
     data = base.model_dump()
+    table_fqn, schema_fqn = parse_inference_location(conn.inference_schema)
+    inference_update: dict[str, str] = {
+        "inference_time_column": conn.inference_time_column,
+        "inference_table_name_suffix": conn.inference_table_suffix,
+    }
+    if (conn.inference_schema or "").strip():
+        inference_update["inference_table_fqn"] = table_fqn or ""
+        inference_update["inference_schema_fqn"] = schema_fqn or ""
+        inference_update["inference_tables_fqn"] = ""
     data.update(
         {
             "databricks_host": conn.host,
@@ -40,11 +50,9 @@ def connection_to_settings(conn: ConnectionRecord, base: Settings | None = None)
             "databricks_token": conn.sql_token,
             "databricks_ai_gateway_token": conn.gateway_token or conn.sql_token,
             "workspace_id": conn.workspace_id_dbx,
-            "inference_schema_fqn": conn.inference_schema,
-            "inference_time_column": conn.inference_time_column,
-            "inference_table_name_suffix": conn.inference_table_suffix,
             "benchmark_enabled": conn.benchmark_enabled,
             "exclude_test_requests_from_analytics": conn.exclude_test_requests,
+            **inference_update,
         }
     )
     return Settings(**data)

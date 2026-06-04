@@ -360,15 +360,18 @@ def inference_metrics() -> dict[str, Any]:
         "count_error": None,
     }
     if not fqns:
-        hint = "Set AGENTOPS_INFERENCE_SCHEMA=catalog.schema and optional AGENTOPS_INFERENCE_TABLE_SUFFIX (default _payload), or AGENTOPS_INFERENCE_TABLE, or AGENTOPS_INFERENCE_TABLES."
+        hint = (
+            "Use catalog.schema (discover payload tables) or catalog.schema.table (one table), "
+            "on your Databricks connection or via AGENTOPS_INFERENCE_SCHEMA / AGENTOPS_INFERENCE_TABLE."
+        )
         single = (s.inference_table_fqn or "").strip()
         multi = (s.inference_tables_fqn or "").strip()
         schema = (s.inference_schema_fqn or "").strip()
         if single or multi or schema:
-            out["describe_error"] = (
-                "Invalid or empty inference config — check FQNs / schema. "
-                f"Resolution note: {fqns_note or 'none'}"
-            )
+            note = fqns_note or "none"
+            if schema and not validate_schema_fqn(schema) and not validate_fqn(schema):
+                note = "Use catalog.schema or catalog.schema.table (not a mix of invalid segments)"
+            out["describe_error"] = f"Invalid or empty inference config — check FQNs / schema. Resolution note: {note}"
         else:
             out["describe_error"] = hint
         return out

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
+from app.databricks.fqn import parse_inference_location
 from app.databricks.sql_client import sql_connection_with_settings
 from app.deps import get_current_user
 from app.services import tenant_store
@@ -53,8 +54,17 @@ def list_connections(user=Depends(get_current_user)):
     return {"connections": tenant_store.list_connections(user["workspace_id"])}
 
 
+def _validate_inference_location(raw: str) -> None:
+    if raw.strip() and not any(parse_inference_location(raw)):
+        raise HTTPException(
+            status_code=400,
+            detail="Inference location must be catalog.schema (discover tables) or catalog.schema.table (one table).",
+        )
+
+
 @router.post("")
 def create_connection(body: ConnectionCreate, user=Depends(get_current_user)):
+    _validate_inference_location(body.inference_schema)
     conn = tenant_store.create_connection(
         workspace_id=user["workspace_id"],
         name=body.name,
@@ -110,6 +120,8 @@ def test_connection(body: ConnectionTest, user=Depends(get_current_user)):
 @router.patch("/{connection_id}")
 def update_connection(connection_id: str, body: ConnectionUpdate, user=Depends(get_current_user)):
     data = body.model_dump(exclude_unset=True)
+    if "inference_schema" in data:
+        _validate_inference_location(str(data.get("inference_schema") or ""))
     updated = tenant_store.update_connection(connection_id, user["workspace_id"], **data)
     if not updated:
         raise HTTPException(status_code=404, detail="Connection not found")

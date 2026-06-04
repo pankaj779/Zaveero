@@ -107,7 +107,10 @@ def build_overview(*, window_hours: int = 168) -> OverviewDTO:
             est_monthly_cost_usd=1840.0,
             quality_score_avg=0.91,
             databricks_sql_reachable=None,
-            inference_setup_hint="Configure DATABRICKS_* in backend/.env, then AGENTOPS_INFERENCE_SCHEMA or AGENTOPS_INFERENCE_TABLE.",
+            inference_setup_hint=(
+                "Connect Databricks in the app (Databricks connection) with SQL PAT and inference location, "
+                "or set DATABRICKS_* and AGENTOPS_INFERENCE_SCHEMA / AGENTOPS_INFERENCE_TABLE in backend/.env."
+            ),
             count_7d=None,
             gateway_tokens_24h=None,
             gateway_tokens_7d=None,
@@ -252,7 +255,11 @@ def build_overview(*, window_hours: int = 168) -> OverviewDTO:
         quality_score_avg=q_score,
         databricks_sql_reachable=True,
         inference_setup_hint=hint
-        or "Set AGENTOPS_INFERENCE_SCHEMA, AGENTOPS_INFERENCE_TABLE, or AGENTOPS_INFERENCE_TABLES and restart API. Open /api/v1/inference/diagnostics for details.",
+        or (
+            "Set inference location on your Databricks connection (catalog.schema or catalog.schema.table), "
+            "or AGENTOPS_INFERENCE_SCHEMA / AGENTOPS_INFERENCE_TABLE in backend/.env. "
+            "Open Diagnostics for details."
+        ),
         count_7d=None,
         gateway_tokens_24h=snap.get("total_tokens_24h") if not snap.get("error") else None,
         gateway_tokens_7d=snap.get("total_tokens_7d") if not snap.get("error") else None,
