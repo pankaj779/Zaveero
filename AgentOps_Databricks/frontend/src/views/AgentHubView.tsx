@@ -150,7 +150,7 @@ export function AgentHubView({ refreshToken = 0 }: { refreshToken?: number }) {
         <DataLoadingState loading={catalogLoading} label="Loading agent catalog…">
         <Card
           title="Agents & models"
-          subtitle="One row per model route (from UC payload tables). Replay uses the same route names as backend/replay_targets.json."
+          subtitle="One row per model route (from UC payload tables). Replay/benchmark use routes you add under Monitored agents."
         >
           <input
             type="search"

@@ -14,6 +14,7 @@ from app.services.compare_run import (
     extract_question_from_payload,
 )
 from app.services.replay import (
+    _active_connection_id,
     _merge_auth_headers,
     _payload_for_target,
     load_replay_targets,
@@ -46,9 +47,14 @@ def run_prompt_benchmark(body: BenchmarkPromptBody) -> dict[str, Any]:
     if len(targets) > s.benchmark_max_targets:
         targets = targets[: s.benchmark_max_targets]
     if not targets:
+        hint = (
+            "Add routes under Monitored agents (after Connect Databricks)."
+            if _active_connection_id()
+            else "Add monitored agents in the app, or set AGENTOPS_REPLAY_TARGETS_JSON for local dev."
+        )
         return {
-            "error": "no_replay_targets",
-            "hint": "Add URLs in AGENTOPS_REPLAY_TARGETS_JSON (same schema as replay).",
+            "error": "no_monitored_agents" if _active_connection_id() else "no_replay_targets",
+            "hint": hint,
             "results": [],
         }
 

@@ -185,12 +185,17 @@ def _parse_replay_targets_list(raw: str) -> tuple[list[ReplayTargetSpec], str | 
     return out, None
 
 
+def _active_connection_id() -> str | None:
+    from app.runtime_context import get_current_connection_id
+
+    return get_current_connection_id()
+
+
 def _load_monitored_agents_from_db() -> list[ReplayTargetSpec]:
     """Load replay targets from the active user's monitored agents (DB)."""
-    from app.runtime_context import get_current_connection_id
     from app.services import tenant_store
 
-    cid = get_current_connection_id()
+    cid = _active_connection_id()
     if not cid:
         return []
     agents = tenant_store.list_monitored_agents(cid)
@@ -215,9 +220,12 @@ def _load_monitored_agents_from_db() -> list[ReplayTargetSpec]:
 
 
 def load_replay_targets() -> list[ReplayTargetSpec]:
+    """Production: only monitored agents when a Databricks connection is active."""
     db_targets = _load_monitored_agents_from_db()
     if db_targets:
         return db_targets
+    if _active_connection_id():
+        return []
     raw, _src, _notes = _replay_targets_json_raw()
     configured, parse_err = _parse_replay_targets_list(raw)
     if parse_err and raw.strip():
@@ -230,21 +238,40 @@ def load_replay_targets() -> list[ReplayTargetSpec]:
 
 
 def replay_targets_public() -> dict[str, Any]:
+    s = get_settings()
+    gw_tok = _ai_gateway_token()
+    auth_block = {
+        "sql_token_configured": bool(_normalize_bearer_token(s.databricks_token)),
+        "gateway_token_configured": bool(gw_tok),
+        "uses_separate_gateway_token": bool(_normalize_bearer_token(s.databricks_ai_gateway_token)),
+        "bearer_sent_on_replay": bool(gw_tok),
+        "hint": (
+            "Replay uses your AI Gateway PAT (DATABRICKS_AI_GATEWAY_TOKEN or SQL PAT). "
+            "Scope needs ai-gateway for HTTP replay."
+        )
+        if gw_tok
+        else "Set AI Gateway PAT on your Databricks connection or in backend/.env",
+    }
     db_targets = _load_monitored_agents_from_db()
     if db_targets:
-        s = get_settings()
-        gw_tok = _ai_gateway_token()
         return {
             "targets": [
                 {"id": t.id, "label": t.label, "model": t.model, "url": t.url}
                 for t in db_targets
             ],
             "source": "monitored_agents_db",
-            "auth": {
-                "sql_token_configured": bool(_normalize_bearer_token(s.databricks_token)),
-                "gateway_token_configured": bool(gw_tok),
-                "bearer_sent_on_replay": bool(gw_tok),
-            },
+            "auth": auth_block,
+        }
+    if _active_connection_id():
+        return {
+            "targets": [],
+            "source": "monitored_agents_db",
+            "auth": auth_block,
+            "hint": (
+                "Add routes under Monitored agents (after Connect). "
+                "Replay and benchmarks only run against agents you configure in the app — "
+                "not replay_targets.json."
+            ),
         }
     raw, src, load_notes = _replay_targets_json_raw()
     configured, parse_err = _parse_replay_targets_list(raw)
@@ -252,14 +279,12 @@ def replay_targets_public() -> dict[str, Any]:
         configured, parse_err = _parse_replay_targets_list("[" + raw.strip() + "]")
     discovered = discover_gateway_replay_targets()
     targets = configured if configured else discovered
-    s = get_settings()
-    sql_tok = _normalize_bearer_token(s.databricks_token)
-    gw_tok = _ai_gateway_token()
     out: dict[str, Any] = {
         "targets": [
             {"id": t.id, "label": t.label, "model": t.model, "url": t.url}
             for t in targets
         ],
+        "source": "replay_targets_file" if configured else "inference_discovery",
         "discovered_from_gateway": [
             {"id": t.id, "label": t.label, "model": t.model}
             for t in discovered
@@ -268,19 +293,8 @@ def replay_targets_public() -> dict[str, Any]:
             {"id": t.id, "label": t.label, "model": t.model}
             for t in configured
         ],
-        "auth": {
-            "sql_token_configured": bool(sql_tok),
-            "gateway_token_configured": bool(gw_tok),
-            "uses_separate_gateway_token": bool(_normalize_bearer_token(s.databricks_ai_gateway_token)),
-            "bearer_sent_on_replay": bool(gw_tok),
-            "hint": (
-                "SQL uses DATABRICKS_TOKEN; replay/benchmark uses DATABRICKS_AI_GATEWAY_TOKEN "
-                "if set, else DATABRICKS_TOKEN. Gateway PAT needs scope ai-gateway; SQL PAT needs sql "
-                "(and unity-catalog for UC tables / system.billing for Cost)."
-            )
-            if gw_tok
-            else "Set DATABRICKS_TOKEN or DATABRICKS_AI_GATEWAY_TOKEN in backend/.env",
-        },
+        "auth": auth_block,
+        "hint": "Local dev without a saved connection — targets from replay_targets.json or inference discovery.",
     }
     if not targets:
         diag: dict[str, Any] = {"configured_from": src, "raw_length": len(raw), "load_notes": load_notes}
@@ -345,7 +359,8 @@ def run_replay(
         want = set(target_ids)
         targets = [t for t in targets if t.id in want]
     if not targets:
-        return {"error": "no_replay_targets_configured", "request_id": request_id, "results": []}
+        err = "no_monitored_agents" if _active_connection_id() else "no_replay_targets_configured"
+        return {"error": err, "request_id": request_id, "results": []}
 
     base = body if isinstance(body, dict) else {}
     question = extract_question_from_payload(base)

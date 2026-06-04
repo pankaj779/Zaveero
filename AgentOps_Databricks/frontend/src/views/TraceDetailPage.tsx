@@ -154,6 +154,19 @@ export function TraceDetailPage() {
       .catch(() => setReplayTargets({ targets: [] }))
   }, [])
 
+  const replaySubtitle = useMemo(() => {
+    const targets = replayTargets?.targets ?? []
+    const names = targets.map((t) => t.label || t.id).join(', ')
+    if (replayTargets?.hint && targets.length === 0) return replayTargets.hint
+    if (targets.length === 0) {
+      return 'No replay routes configured — add agents under Monitored agents (sidebar).'
+    }
+    if (replayTargets?.source === 'monitored_agents_db') {
+      return `Re-sends this request to your monitored route(s): ${names}.`
+    }
+    return `Re-sends this request to ${targets.length} configured route(s): ${names}.`
+  }, [replayTargets])
+
   const resolvedCols = detail?.payload_columns_resolved
 
   const requestBodyText = useMemo(() => {
@@ -298,15 +311,11 @@ export function TraceDetailPage() {
         ) : null}
 
         {!loading && detail?.request_id ? (
-          <Card
-            title="Replay this request"
-            subtitle="Re-sends the same stored JSON body to every route in backend/replay_targets.json (agentops_test, gemma-3-model_payload, llama-4-model_payload)."
-          >
+          <Card title="Replay this request" subtitle={replaySubtitle}>
             {(replayTargets?.targets?.length ?? 0) === 0 ? (
               <p className="mb-3 text-sm text-[var(--color-warn-fg)]">
-                Loading replay targets… If this stays empty, fix{' '}
-                <code className="text-[10px]">backend/replay_targets.json</code> (must be a JSON array) and
-                restart the API.
+                {replayTargets?.hint ??
+                  'Add at least one route under Monitored agents (after Connect). Replay only uses agents you add in the app.'}
               </p>
             ) : (
               <>
@@ -348,12 +357,11 @@ export function TraceDetailPage() {
 
         <Card
           title="Custom prompt benchmark"
-          subtitle="Type a new question and send it to all replay targets (different from “Replay this request”, which reuses the stored trace JSON)."
+          subtitle="Send a new question to your monitored routes (separate from replay, which reuses this trace’s JSON)."
         >
           {(replayTargets?.targets?.length ?? 0) === 0 ? (
             <div className="mb-3 rounded-lg border border-[var(--color-warn-border)] bg-[var(--color-warn-bg)] px-3 py-2 text-[11px] text-[var(--color-warn-fg)]">
-              Replay targets not loaded. Add <code className="text-[10px]">backend/replay_targets.json</code> and restart
-              the API.
+              {replayTargets?.hint ?? 'Add monitored agents to enable benchmarks.'}
             </div>
           ) : null}
           <p className="mb-2 text-[10px] text-[var(--color-muted)]">
@@ -426,7 +434,11 @@ export function TraceDetailPage() {
         {!loading && detail?.cost_attribution ? (
           <Card title="Cost attribution (this request)">
             <p className="text-xs text-[var(--color-muted)]">
-              Why this request costs what it costs — gateway metering + billing.usage match when available.
+              {detail.cost_attribution.attribution === 'ai_gateway_token_estimate'
+                ? 'List price from gateway tokens × env rate — no MODEL_SERVING DBU row matched this request yet.'
+                : detail.cost_attribution.attribution === 'request_pinned_token_prorated'
+                  ? 'List price and DBU prorated from workspace system.billing.usage by this request’s gateway token share (same method as Cost & tokens when pinned).'
+                  : 'List price from system.billing.usage (DBU × list prices), aligned with the Cost page when this request is pinned.'}
               {detail.cost_attribution.metering_source === 'completion_response_json'
                 ? ' Tokens here come from completion.usage embedded in your inference payload (Agent / Apps traffic often differs from system.ai_gateway.usage request_id).'
                 : detail.cost_attribution.metering_source === 'ai_gateway_heuristic_time_destination'
@@ -444,7 +456,7 @@ export function TraceDetailPage() {
                 <dt className="text-[10px] uppercase text-[var(--color-muted)]">List price (est.)</dt>
                 <dd className="tabular-nums font-medium">
                   {detail.cost_attribution.list_usd != null
-                    ? `USD ${detail.cost_attribution.list_usd.toFixed(6)}`
+                    ? `USD ${detail.cost_attribution.list_usd.toFixed(4)}`
                     : '—'}
                 </dd>
               </div>

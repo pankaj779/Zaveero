@@ -332,7 +332,9 @@ export function CostView({ refreshToken = 0 }: { refreshToken?: number }) {
               Token est. (env rate)
             </div>
             <div className="mt-0.5 text-[10px] text-[var(--color-muted)]">
-              Gateway tokens × ${tokenEst?.usd_per_1m_tokens ?? 0.7}/1M — fallback when billing.usage has no DBU rows
+              {tokenEst?.estimated_usd != null
+                ? `Gateway tokens × $${tokenEst?.usd_per_1m_tokens ?? 0.7}/1M — fallback when billing.usage has no DBU rows`
+                : 'Not used — list price above comes from system.billing.usage (DBU)'}
             </div>
             <div className="mt-1 text-2xl font-semibold tabular-nums text-[var(--color-teal)]">
               {tokenEst?.estimated_usd != null ? `USD ${tokenEst.estimated_usd.toFixed(4)}` : '—'}

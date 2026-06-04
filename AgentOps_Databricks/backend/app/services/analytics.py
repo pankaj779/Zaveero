@@ -818,6 +818,99 @@ def _rollup_billing_usage_rows(
     return by_ep, total_dbu, total_usd
 
 
+def billing_for_pinned_requests(
+    hours: int,
+    request_ids: list[str],
+    gateway_total_tokens: int,
+    *,
+    ctx: dict[str, Any] | None = None,
+    row_cache: dict[str, tuple[dict[str, Any] | None, Any, Any]] | None = None,
+) -> dict[str, Any]:
+    """DBU-first cost for pinned request_id(s): billing.usage match, then endpoint terms, then token proration."""
+    rid_list = [str(r).strip() for r in request_ids if r and str(r).strip()]
+    gw_tokens = int(gateway_total_tokens or 0)
+    bill = billing_model_serving_cost(
+        hours,
+        endpoint_exact_request_ids=rid_list or None,
+        gateway_total_tokens=gw_tokens or None,
+    )
+    if not rid_list or bill.get("error"):
+        return bill
+    if float(bill.get("total_dbu") or 0) > 0:
+        return bill
+
+    if gw_tokens <= 0:
+        return bill
+
+    pin_terms: list[str] = []
+    for prid in rid_list:
+        pin_terms.extend(_resolve_billing_terms_for_pinned_request(ctx, prid, row_cache=row_cache))
+    pin_terms = list(dict.fromkeys(t for t in pin_terms if t))
+    if pin_terms:
+        bill_terms = billing_model_serving_cost(
+            hours,
+            endpoint_match_terms=pin_terms,
+            gateway_total_tokens=gw_tokens,
+        )
+        if bill_terms and not bill_terms.get("error"):
+            td = float(bill_terms.get("total_dbu") or 0)
+            tu = float(bill_terms.get("total_list_usd") or 0)
+            if td > 0 or tu > 0:
+                bill = bill_terms
+                bill["attribution"] = "request_pinned"
+
+    if float(bill.get("total_dbu") or 0) == 0:
+        ag_ws = ai_gateway_usage_rollup(hours)
+        ws_tok = int(ag_ws.get("total_tokens") or 0) if not ag_ws.get("error") else 0
+        bill_ws = billing_model_serving_cost(
+            hours,
+            endpoint_match_terms=None,
+            gateway_total_tokens=ws_tok or None,
+        )
+        wu = float(bill_ws.get("total_list_usd") or 0) if bill_ws and not bill_ws.get("error") else 0.0
+        wd = float(bill_ws.get("total_dbu") or 0) if bill_ws and not bill_ws.get("error") else 0.0
+        if ws_tok > 0 and gw_tokens > 0 and (wd > 0 or wu > 0):
+            ratio = min(1.0, gw_tokens / ws_tok)
+            bill = dict(bill)
+            bill["total_dbu"] = round(wd * ratio, 6)
+            bill["total_list_usd"] = round(wu * ratio, 6)
+            bill["attribution"] = "request_pinned_token_prorated"
+            bill["note"] = (
+                (bill.get("note") or "").strip()
+                + " DBU/list USD prorated from workspace system.billing.usage by gateway token share "
+                f"({gw_tokens:,} pinned / {ws_tok:,} workspace). "
+                "Databricks billing has no per-request_id column."
+            ).strip()
+            by_ws = bill_ws.get("by_endpoint") or []
+            if isinstance(by_ws, list) and by_ws:
+                scaled: list[dict[str, Any]] = []
+                for ep in by_ws[:15]:
+                    if not isinstance(ep, dict):
+                        continue
+                    scaled.append(
+                        {
+                            **ep,
+                            "dbu": round(float(ep.get("dbu") or 0) * ratio, 6),
+                            "list_usd": (
+                                round(float(ep.get("list_usd") or 0) * ratio, 6)
+                                if ep.get("list_usd") is not None
+                                else None
+                            ),
+                        },
+                    )
+                bill["by_endpoint"] = scaled
+            bill["workspace_reference"] = {
+                "hours": bill_ws.get("hours"),
+                "total_dbu": bill_ws.get("total_dbu"),
+                "total_list_usd": bill_ws.get("total_list_usd"),
+                "currency_code": bill_ws.get("currency_code"),
+                "prorate_ratio": round(ratio, 6),
+                "note": "Full workspace MODEL_SERVING totals before proration to pinned requests.",
+            }
+
+    return bill
+
+
 def _apply_billing_gateway_token_fallback(
     bill: dict[str, Any],
     *,
@@ -2621,12 +2714,21 @@ def cost_summary(
                 billing_terms_param = []
 
     gw_tokens_for_bill = int((ag or {}).get("total_tokens") or 0)
-    bill = billing_model_serving_cost(
-        hours,
-        endpoint_match_terms=billing_terms_param if has_focus and not billing_rid_exact else None,
-        endpoint_exact_request_ids=billing_rid_exact,
-        gateway_total_tokens=gw_tokens_for_bill,
-    )
+    if billing_rid_exact:
+        bill = billing_for_pinned_requests(
+            hours,
+            billing_rid_exact,
+            gw_tokens_for_bill,
+            ctx=ctx if not err else None,
+            row_cache=row_cache,
+        )
+    else:
+        bill = billing_model_serving_cost(
+            hours,
+            endpoint_match_terms=billing_terms_param if has_focus else None,
+            endpoint_exact_request_ids=None,
+            gateway_total_tokens=gw_tokens_for_bill,
+        )
     if (
         has_focus
         and not rid_list
@@ -2659,78 +2761,6 @@ def cost_summary(
                 (bill.get("note") or "").strip()
                 + " workspace_reference holds unscoped MODEL_SERVING totals for comparison."
             ).strip()
-
-    if (
-        billing_rid_exact
-        and bill
-        and not bill.get("error")
-        and float(bill.get("total_dbu") or 0) == 0
-        and gw_tokens_for_bill > 0
-    ):
-        pin_terms: list[str] = []
-        for prid in billing_rid_exact:
-            pin_terms.extend(_resolve_billing_terms_for_pinned_request(ctx, prid, row_cache=row_cache))
-        pin_terms = list(dict.fromkeys(t for t in pin_terms if t))
-        if pin_terms:
-            bill_terms = billing_model_serving_cost(
-                hours,
-                endpoint_match_terms=pin_terms,
-                gateway_total_tokens=gw_tokens_for_bill,
-            )
-            if bill_terms and not bill_terms.get("error"):
-                td = float(bill_terms.get("total_dbu") or 0)
-                tu = float(bill_terms.get("total_list_usd") or 0)
-                if td > 0 or tu > 0:
-                    bill = bill_terms
-                    bill["attribution"] = "request_pinned"
-
-        if float(bill.get("total_dbu") or 0) == 0:
-            ag_ws = ai_gateway_usage_rollup(hours)
-            ws_tok = int(ag_ws.get("total_tokens") or 0) if not ag_ws.get("error") else 0
-            bill_ws = billing_model_serving_cost(
-                hours,
-                endpoint_match_terms=None,
-                gateway_total_tokens=ws_tok or None,
-            )
-            wu = float(bill_ws.get("total_list_usd") or 0) if bill_ws and not bill_ws.get("error") else 0.0
-            wd = float(bill_ws.get("total_dbu") or 0) if bill_ws and not bill_ws.get("error") else 0.0
-            if ws_tok > 0 and gw_tokens_for_bill > 0 and (wd > 0 or wu > 0):
-                ratio = min(1.0, gw_tokens_for_bill / ws_tok)
-                bill["total_dbu"] = round(wd * ratio, 6)
-                bill["total_list_usd"] = round(wu * ratio, 6)
-                bill["attribution"] = "request_pinned_token_prorated"
-                bill["note"] = (
-                    (bill.get("note") or "").strip()
-                    + " DBU/list USD prorated from workspace billing.usage by gateway token share "
-                    f"({gw_tokens_for_bill:,} pinned / {ws_tok:,} workspace). "
-                    "Databricks billing has no per-request_id column."
-                ).strip()
-                by_ws = bill_ws.get("by_endpoint") or []
-                if isinstance(by_ws, list) and by_ws:
-                    scaled: list[dict[str, Any]] = []
-                    for ep in by_ws[:15]:
-                        if not isinstance(ep, dict):
-                            continue
-                        scaled.append(
-                            {
-                                **ep,
-                                "dbu": round(float(ep.get("dbu") or 0) * ratio, 6),
-                                "list_usd": (
-                                    round(float(ep.get("list_usd") or 0) * ratio, 6)
-                                    if ep.get("list_usd") is not None
-                                    else None
-                                ),
-                            },
-                        )
-                    bill["by_endpoint"] = scaled
-                bill["workspace_reference"] = {
-                    "hours": bill_ws.get("hours"),
-                    "total_dbu": bill_ws.get("total_dbu"),
-                    "total_list_usd": bill_ws.get("total_list_usd"),
-                    "currency_code": bill_ws.get("currency_code"),
-                    "prorate_ratio": round(ratio, 6),
-                    "note": "Full workspace MODEL_SERVING totals before proration to pinned requests.",
-                }
 
     out: dict[str, Any] = {
         "hours": int(hours),
@@ -2887,6 +2917,15 @@ def cost_summary(
     return out
 
 
+def _billing_has_dbu_list_price(bill: dict[str, Any] | None) -> bool:
+    if not bill or bill.get("error"):
+        return False
+    attr = str(bill.get("attribution") or "")
+    if attr == "ai_gateway_token_estimate":
+        return False
+    return float(bill.get("total_dbu") or 0) > 0 or float(bill.get("total_list_usd") or 0) > 0
+
+
 def _attach_token_cost_estimate(out: dict[str, Any]) -> None:
     try:
         from app.services.compare_run import cost_estimate_meta
@@ -2894,13 +2933,21 @@ def _attach_token_cost_estimate(out: dict[str, Any]) -> None:
         est_meta = cost_estimate_meta()
         per_1m = est_meta.get("usd_per_1m_tokens")
         tt = int((out.get("ai_gateway") or {}).get("total_tokens") or 0)
-        est_usd = (
-            round(tt * float(per_1m) / 1_000_000.0, 6) if per_1m is not None and tt > 0 else None
-        )
+        bill = out.get("billing")
+        has_billing = _billing_has_dbu_list_price(bill if isinstance(bill, dict) else None)
+        est_usd = None
+        if not has_billing and per_1m is not None and tt > 0:
+            est_usd = round(tt * float(per_1m) / 1_000_000.0, 6)
+        note = est_meta.get("note")
+        if has_billing:
+            note = (
+                "Primary cost is from system.billing.usage (DBU × list prices). "
+                "Token estimate omitted when billing rows are available."
+            )
         out["token_cost_estimate"] = {
             "usd_per_1m_tokens": per_1m,
             "estimated_usd": est_usd,
-            "note": est_meta.get("note"),
+            "note": note,
         }
     except Exception:  # noqa: BLE001
         out["token_cost_estimate"] = None
@@ -3254,11 +3301,7 @@ def trace_detail(request_id: str) -> dict[str, Any]:
         comparison_group_id = str(raw_cg).strip() if raw_cg is not None and str(raw_cg).strip() else None
         lineage_graph = _build_request_lineage_graph(serializable, parsed_resp, gw, reasoning, parsed_req)
         gw_tok = int(gw.get("total_tokens") or 0) if gw else 0
-        bill = billing_model_serving_cost(
-            24 * 7,
-            endpoint_exact_request_ids=[rid],
-            gateway_total_tokens=gw_tok or None,
-        )
+        bill = billing_for_pinned_requests(24 * 7, [rid], gw_tok, ctx=ctx)
         cost_attribution = {
             "request_id": rid,
             "gateway_tokens": gw_tok if gw else None,

@@ -323,6 +323,8 @@ export type ReplayTargetInfo = {
 
 export type ReplayTargetsResponse = {
   targets: ReplayTargetInfo[]
+  source?: 'monitored_agents_db' | 'replay_targets_file' | 'inference_discovery'
+  hint?: string
   diagnostics?: {
     configured_from?: string
     raw_length?: number
