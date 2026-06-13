@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  clientName  String
+  location    String
+  description String
+  category    String
+  photos      String   @default("[]")
+  videos      String   @default("[]")
+  featured    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PricingItem {
+  id           String @id @default(cuid())
+  materialType String
+  category     String
+  itemName     String
+  unit         String
+  rate         Float
+  sortOrder    Int    @default(0)
+}
+
+model Testimonial {
+  id        String   @id @default(cuid())
+  name      String
+  role      String
+  quote     String
+  rating    Int      @default(5)
+  status    String   @default("approved")
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model ContactInquiry {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String
+  service   String
+  message   String
+  emailed   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String
+  passwordHash String
+  role         String   @default("admin")
+  createdAt    DateTime @default(now())
+}
+
+model Quotation {
+  id            String          @id @default(cuid())
+  referenceCode String          @unique
+  clientName    String
+  clientPhone   String
+  clientEmail   String          @default("")
+  projectTitle  String
+  location      String
+  serviceType   String
+  description   String
+  status        String          @default("pending")
+  emailed       Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  items         QuotationItem[]
+}
+
+model QuotationItem {
+  id          String    @id @default(cuid())
+  quotationId String
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  itemName    String
+  unit        String
+  quantity    Float
+  rate        Float
+  notes       String    @default("")
+}
