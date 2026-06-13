@@ -43,8 +43,13 @@ Thumbs.db
 # Logs
 *.log
 
+# Sanjana Stone Arts — local uploads & dev DB (production uses Cloudinary + Neon)
+Marble_web_site/public/uploads/
+Marble_web_site/prisma/dev.db
+Marble_web_site/prisma/dev.db-journal
+
 # Prisma generated (regenerate in CI)
 # Keep schema; ignore local query engine cache if any
 
-# Assets from chat (optional)
-assets/
+# Local deploy secrets (never commit real values)
+deploy/neon.secrets.env
