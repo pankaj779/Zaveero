@@ -1,4 +1,7 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+
+dotenv.config({ path: ".env", override: true });
+
 import bcrypt from "bcryptjs";
 import { STONE_IMAGES } from "../lib/images";
 import { prisma } from "../lib/prisma";
