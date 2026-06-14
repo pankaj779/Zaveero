@@ -1,9 +1,7 @@
 import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { STONE_IMAGES } from "../lib/images";
-
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma";
 
 const PROJECTS = [
   {
