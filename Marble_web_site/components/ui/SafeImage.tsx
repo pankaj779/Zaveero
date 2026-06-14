@@ -1,13 +1,21 @@
+import { cloudinaryDeliveryUrl } from "@/lib/cloudinary";
 import Image, { ImageProps } from "next/image";
 
 type SafeImageProps = Omit<ImageProps, "src"> & {
   src: string;
+  /** Max width for Cloudinary delivery (ignored for other URLs). */
+  deliveryWidth?: number;
 };
 
-/**
- * Renders images with unoptimized mode to avoid Next.js image optimizer 500 errors
- * in development and with external/local upload URLs.
- */
-export function SafeImage({ src, alt, ...props }: SafeImageProps) {
-  return <Image src={src} alt={alt} unoptimized {...props} />;
+export function SafeImage({ src, alt, deliveryWidth = 1200, ...props }: SafeImageProps) {
+  const resolved = cloudinaryDeliveryUrl(src, deliveryWidth);
+  const isCloudinary = resolved.includes("res.cloudinary.com");
+  return (
+    <Image
+      src={resolved}
+      alt={alt}
+      unoptimized={!isCloudinary}
+      {...props}
+    />
+  );
 }
