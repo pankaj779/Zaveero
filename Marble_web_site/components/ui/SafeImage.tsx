@@ -1,4 +1,4 @@
-import { cloudinaryDeliveryUrl } from "@/lib/cloudinary";
+import { cloudinaryDeliveryUrl } from "@/lib/cloudinary-url";
 import Image, { ImageProps } from "next/image";
 
 type SafeImageProps = Omit<ImageProps, "src"> & {
