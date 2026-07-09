@@ -1,0 +1,37 @@
+{
+  "name": "@graphology/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./globals.css": "./src/globals.css"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@graphology/utils": "workspace:*",
+    "@radix-ui/react-slot": "^1.2.3",
+    "class-variance-authority": "^0.7.1",
+    "react": "^19.1.0"
+  },
+  "devDependencies": {
+    "@graphology/config": "workspace:*",
+    "@types/react": "^19.1.6",
+    "eslint": "^9.28.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

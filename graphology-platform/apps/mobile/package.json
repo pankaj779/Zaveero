@@ -1,0 +1,14 @@
+{
+  "name": "@graphology/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile application placeholder for future Android and iOS development.",
+  "scripts": {
+    "build": "node ../../scripts/noop.mjs",
+    "clean": "node ../../scripts/noop.mjs",
+    "dev": "node ../../scripts/noop.mjs",
+    "lint": "node ../../scripts/noop.mjs",
+    "test": "node ../../scripts/noop.mjs",
+    "typecheck": "node ../../scripts/noop.mjs"
+  }
+}

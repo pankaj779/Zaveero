@@ -1,0 +1,23 @@
+{
+  "name": "@graphology/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts && playwright test",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test",
+    "build": "node ../scripts/noop.mjs",
+    "clean": "node ../scripts/noop.mjs",
+    "dev": "node ../scripts/noop.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@graphology/config": "workspace:*",
+    "@playwright/test": "^1.52.0",
+    "eslint": "^9.28.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.1"
+  }
+}

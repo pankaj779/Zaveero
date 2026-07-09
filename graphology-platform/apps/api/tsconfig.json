@@ -1,0 +1,17 @@
+{
+  "extends": "@graphology/config/tsconfig/nestjs",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@graphology/auth": ["../../packages/auth/src/index.ts"],
+      "@graphology/database": ["../../packages/database/src/index.ts"],
+      "@graphology/types": ["../../packages/types/src/index.ts"],
+      "@graphology/utils": ["../../packages/utils/src/index.ts"]
+    },
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

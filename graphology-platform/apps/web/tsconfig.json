@@ -1,0 +1,36 @@
+{
+  "extends": "@graphology/config/tsconfig/nextjs",
+  "compilerOptions": {
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./*"
+      ],
+      "@graphology/ui": [
+        "../../packages/ui/src/index.ts"
+      ],
+      "@graphology/types": [
+        "../../packages/types/src/index.ts"
+      ],
+      "@graphology/utils": [
+        "../../packages/utils/src/index.ts"
+      ]
+    },
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "incremental": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

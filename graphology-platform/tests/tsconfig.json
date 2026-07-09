@@ -1,0 +1,8 @@
+{
+  "extends": "@graphology/config/tsconfig/base",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}
