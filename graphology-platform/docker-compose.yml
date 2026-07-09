@@ -24,10 +24,10 @@ services:
     container_name: graphology-api
     restart: unless-stopped
     ports:
-      - '4000:4000'
+      - '3001:3001'
     environment:
       NODE_ENV: development
-      PORT: 4000
+      PORT: 3001
       HOST: 0.0.0.0
       DATABASE_URL: postgresql://graphology:graphology@postgres:5432/graphology?schema=public
       JWT_SECRET: development-secret-change-in-production
@@ -48,7 +48,7 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_APP_URL: http://localhost:3000
-      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
     depends_on:
       - api
 

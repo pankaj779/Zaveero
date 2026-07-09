@@ -31,7 +31,7 @@ COPY --from=builder --chown=nestjs:nodejs /app/apps/api/dist ./apps/api/dist
 COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/packages/database/node_modules/.prisma ./packages/database/node_modules/.prisma
 USER nestjs
-EXPOSE 4000
-ENV PORT=4000
+EXPOSE 3001
+ENV PORT=3001
 ENV HOST=0.0.0.0
 CMD ["node", "apps/api/dist/main.js"]

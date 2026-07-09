@@ -47,6 +47,6 @@ packages/database/prisma/migrations/**/migration_lock.toml
 # Docker
 .docker/
 
-# Misc
-*.pem
+*.tsbuildinfo
+
 .vercel

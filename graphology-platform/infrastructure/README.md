@@ -11,7 +11,7 @@ This directory contains infrastructure configuration and deployment resources fo
 
 | Environment | Frontend | Backend | Database |
 |-------------|----------|---------|----------|
-| Development | localhost:3000 | localhost:4000 | localhost:5432 |
+| Development | localhost:3000 | localhost:3001 | localhost:5432 |
 | Staging | Vercel | Render | Neon |
 | Production | Vercel | Render | Neon |
 
