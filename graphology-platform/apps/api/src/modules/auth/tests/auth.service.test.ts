@@ -17,7 +17,9 @@ import type {
   AuthRepository,
   AuthUserRecord,
   CreateEmailVerificationTokenInput,
+  CreateRefreshTokenInput,
   EmailVerificationTokenRecord,
+  RefreshTokenRecord,
   RegisterUserInput,
   RegisterUserResult,
 } from '../interfaces/auth-repository.interface';
@@ -28,6 +30,27 @@ import {
   generateEmailVerificationToken,
   hashEmailVerificationToken,
 } from '../utils/email-verification-token.util';
+
+function createMockAuthRepository(
+  overrides: Partial<AuthRepository> & Pick<
+    AuthRepository,
+    | 'registerUser'
+    | 'createEmailVerificationToken'
+    | 'findEmailVerificationTokenByHash'
+    | 'deleteEmailVerificationTokensForUser'
+    | 'deleteEmailVerificationToken'
+  >,
+): AuthRepository {
+  return {
+    marker: 'auth-repository',
+    createRefreshToken: vi.fn(),
+    findRefreshTokenByHash: vi.fn(),
+    rotateRefreshToken: vi.fn(),
+    revokeRefreshToken: vi.fn(),
+    revokeAllRefreshTokensForUser: vi.fn(),
+    ...overrides,
+  };
+}
 
 function createAuthService(deps: {
   authRepository: AuthRepository;
@@ -67,16 +90,19 @@ describe('AuthService.register', () => {
   const deleteEmailVerificationTokensForUser = vi.fn();
   const deleteEmailVerificationToken = vi.fn();
   const createAccessToken = vi.fn();
+  const createTokenPair = vi.fn();
+  const createRefreshToken =
+    vi.fn<(input: CreateRefreshTokenInput) => Promise<RefreshTokenRecord>>();
   const sendEmail = vi.fn<(input: { to: string; subject: string; html: string; text?: string }) => Promise<void>>();
 
-  const authRepository: AuthRepository = {
-    marker: 'auth-repository',
+  const authRepository = createMockAuthRepository({
     registerUser,
     createEmailVerificationToken,
     findEmailVerificationTokenByHash,
     deleteEmailVerificationTokensForUser,
     deleteEmailVerificationToken,
-  };
+    createRefreshToken,
+  });
 
   const userRepository: UserRepository = {
     marker: 'user-repository',
@@ -86,7 +112,7 @@ describe('AuthService.register', () => {
     markEmailVerified,
   };
 
-  const tokenService = { createAccessToken } as unknown as TokenService;
+  const tokenService = { createAccessToken, createTokenPair } as unknown as TokenService;
   const emailService = { sendEmail } as unknown as EmailService;
   let service: AuthService;
 
@@ -210,16 +236,19 @@ describe('AuthService.login', () => {
   const deleteEmailVerificationTokensForUser = vi.fn();
   const deleteEmailVerificationToken = vi.fn();
   const createAccessToken = vi.fn();
+  const createTokenPair = vi.fn();
+  const createRefreshToken =
+    vi.fn<(input: CreateRefreshTokenInput) => Promise<RefreshTokenRecord>>();
   const sendEmail = vi.fn<(input: { to: string; subject: string; html: string; text?: string }) => Promise<void>>();
 
-  const authRepository: AuthRepository = {
-    marker: 'auth-repository',
+  const authRepository = createMockAuthRepository({
     registerUser,
     createEmailVerificationToken,
     findEmailVerificationTokenByHash,
     deleteEmailVerificationTokensForUser,
     deleteEmailVerificationToken,
-  };
+    createRefreshToken,
+  });
 
   const userRepository: UserRepository = {
     marker: 'user-repository',
@@ -229,7 +258,7 @@ describe('AuthService.login', () => {
     markEmailVerified,
   };
 
-  const tokenService = { createAccessToken } as unknown as TokenService;
+  const tokenService = { createAccessToken, createTokenPair } as unknown as TokenService;
   const emailService = { sendEmail } as unknown as EmailService;
   let service: AuthService;
   let activeUser: AuthUserRecord;
@@ -255,11 +284,23 @@ describe('AuthService.login', () => {
     };
   });
 
-  it('logs in successfully and returns an access token', async () => {
+  it('logs in successfully and returns access and refresh tokens', async () => {
     findByEmail.mockResolvedValue(activeUser);
-    createAccessToken.mockResolvedValue({
+    createTokenPair.mockResolvedValue({
       accessToken: 'jwt-token',
+      refreshToken: 'refresh-token',
       expiresIn: '15m',
+      refreshTokenHash: 'refresh-hash',
+      refreshTokenExpiresAt: new Date(Date.now() + 86_400_000),
+    });
+    createRefreshToken.mockResolvedValue({
+      id: 'rt-1',
+      userId: 'user-1',
+      tokenHash: 'refresh-hash',
+      expiresAt: new Date(Date.now() + 86_400_000),
+      revokedAt: null,
+      createdAt: new Date(),
+      replacedByTokenId: null,
     });
 
     const result = await service.login({
@@ -268,6 +309,12 @@ describe('AuthService.login', () => {
     });
 
     expect(result.data.accessToken).toBe('jwt-token');
+    expect(result.data.refreshToken).toBe('refresh-token');
+    expect(createRefreshToken).toHaveBeenCalledTimes(1);
+    const refreshInput = createRefreshToken.mock.calls[0]?.[0];
+    expect(refreshInput?.userId).toBe('user-1');
+    expect(refreshInput?.tokenHash).toBe('refresh-hash');
+    expect(refreshInput?.expiresAt).toBeInstanceOf(Date);
   });
 
   it('rejects wrong password with InvalidCredentialsException', async () => {
@@ -342,16 +389,19 @@ describe('AuthService.verifyEmail and resendVerification', () => {
   const deleteEmailVerificationTokensForUser = vi.fn();
   const deleteEmailVerificationToken = vi.fn();
   const createAccessToken = vi.fn();
+  const createTokenPair = vi.fn();
+  const createRefreshToken =
+    vi.fn<(input: CreateRefreshTokenInput) => Promise<RefreshTokenRecord>>();
   const sendEmail = vi.fn<(input: { to: string; subject: string; html: string; text?: string }) => Promise<void>>();
 
-  const authRepository: AuthRepository = {
-    marker: 'auth-repository',
+  const authRepository = createMockAuthRepository({
     registerUser,
     createEmailVerificationToken,
     findEmailVerificationTokenByHash,
     deleteEmailVerificationTokensForUser,
     deleteEmailVerificationToken,
-  };
+    createRefreshToken,
+  });
 
   const userRepository: UserRepository = {
     marker: 'user-repository',
@@ -361,7 +411,7 @@ describe('AuthService.verifyEmail and resendVerification', () => {
     markEmailVerified,
   };
 
-  const tokenService = { createAccessToken } as unknown as TokenService;
+  const tokenService = { createAccessToken, createTokenPair } as unknown as TokenService;
   const emailService = { sendEmail } as unknown as EmailService;
   let service: AuthService;
 

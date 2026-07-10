@@ -16,6 +16,8 @@ import {
 } from '../constants/auth.constants';
 import { AUTH_REPOSITORY, USER_REPOSITORY } from '../constants/injection-tokens';
 import type { LoginDto } from '../dto/login.dto';
+import type { LogoutDto } from '../dto/logout.dto';
+import type { RefreshTokenDto } from '../dto/refresh-token.dto';
 import type { RegisterDto } from '../dto/register.dto';
 import type { ResendVerificationDto } from '../dto/resend-verification.dto';
 import type { VerifyEmailDto } from '../dto/verify-email.dto';
@@ -29,7 +31,10 @@ import {
 } from '../exceptions';
 import type { AuthRepository } from '../interfaces/auth-repository.interface';
 import type { UserRepository } from '../interfaces/user-repository.interface';
-import type { LoginResponseData } from '../types/login-response.type';
+import type {
+  LoginResponseData,
+  RefreshResponseData,
+} from '../types/login-response.type';
 import type { RegisterResponseData } from '../types/register-response.type';
 import {
   generateEmailVerificationToken,
@@ -115,16 +120,23 @@ export class AuthService {
       throw new AccountDisabledException();
     }
 
-    const token = await this.tokenService.createAccessToken({
+    const tokens = await this.tokenService.createTokenPair({
       id: user.id,
       email: user.email,
+    });
+
+    await this.authRepository.createRefreshToken({
+      userId: user.id,
+      tokenHash: tokens.refreshTokenHash,
+      expiresAt: tokens.refreshTokenExpiresAt,
     });
 
     return {
       message: 'Login successful.',
       data: {
-        accessToken: token.accessToken,
-        expiresIn: token.expiresIn,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
         user: {
           id: user.id,
           firstName: user.firstName,
@@ -132,6 +144,68 @@ export class AuthService {
           email: user.email,
         },
       },
+    };
+  }
+
+  async refresh(
+    dto: RefreshTokenDto,
+  ): Promise<ControllerSuccessPayload<RefreshResponseData>> {
+    const tokenHash = this.tokenService.hashIncomingRefreshToken(dto.refreshToken);
+    const existing = await this.authRepository.findRefreshTokenByHash(tokenHash);
+
+    if (!existing) {
+      throw new TokenInvalidException('Refresh token is invalid.');
+    }
+
+    if (existing.revokedAt !== null) {
+      await this.authRepository.revokeAllRefreshTokensForUser(existing.userId);
+      throw new TokenInvalidException('Refresh token is invalid.');
+    }
+
+    if (existing.expiresAt.getTime() <= Date.now()) {
+      await this.authRepository.revokeRefreshToken(existing.id);
+      throw new TokenExpiredException('Refresh token has expired.');
+    }
+
+    const user = await this.userRepository.findById(existing.userId);
+    if (!user || !user.isActive || user.deletedAt !== null) {
+      await this.authRepository.revokeAllRefreshTokensForUser(existing.userId);
+      throw new TokenInvalidException('Refresh token is invalid.');
+    }
+
+    const tokens = await this.tokenService.createTokenPair({
+      id: user.id,
+      email: user.email,
+    });
+
+    await this.authRepository.rotateRefreshToken({
+      currentTokenId: existing.id,
+      userId: user.id,
+      newTokenHash: tokens.refreshTokenHash,
+      newExpiresAt: tokens.refreshTokenExpiresAt,
+    });
+
+    return {
+      message: 'Token refreshed successfully.',
+      data: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      },
+    };
+  }
+
+  async logout(dto: LogoutDto): Promise<ControllerSuccessPayload<null>> {
+    const tokenHash = this.tokenService.hashIncomingRefreshToken(dto.refreshToken);
+    const existing = await this.authRepository.findRefreshTokenByHash(tokenHash);
+
+    if (existing?.revokedAt === null) {
+      await this.authRepository.revokeRefreshToken(existing.id);
+    }
+
+    return {
+      message: 'Logged out successfully.',
+      data: null,
     };
   }
 

@@ -5,5 +5,9 @@ export type {
   RegisterUserResult,
   CreateEmailVerificationTokenInput,
   EmailVerificationTokenRecord,
+  RefreshTokenRecord,
+  CreateRefreshTokenInput,
+  RotateRefreshTokenInput,
+  RotateRefreshTokenResult,
 } from './auth-repository.interface';
 export type { UserRepository } from './user-repository.interface';

@@ -2,11 +2,16 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestj
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { ControllerSuccessPayload } from '../../../common/interfaces/api-response.interface';
 import { LoginDto } from '../dto/login.dto';
+import { LogoutDto } from '../dto/logout.dto';
+import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
 import { VerifyEmailDto } from '../dto/verify-email.dto';
 import { AuthService } from '../services/auth.service';
-import type { LoginResponseData } from '../types/login-response.type';
+import type {
+  LoginResponseData,
+  RefreshResponseData,
+} from '../types/login-response.type';
 import type { RegisterResponseData } from '../types/register-response.type';
 
 @ApiTags('Auth')
@@ -28,6 +33,22 @@ export class AuthController {
   @ApiOperation({ summary: 'Authenticate with email and password' })
   login(@Body() dto: LoginDto): Promise<ControllerSuccessPayload<LoginResponseData>> {
     return this.authService.login(dto);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Rotate refresh token and issue a new access token' })
+  refresh(
+    @Body() dto: RefreshTokenDto,
+  ): Promise<ControllerSuccessPayload<RefreshResponseData>> {
+    return this.authService.refresh(dto);
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke a refresh token' })
+  logout(@Body() dto: LogoutDto): Promise<ControllerSuccessPayload<null>> {
+    return this.authService.logout(dto);
   }
 
   @Get('verify-email')

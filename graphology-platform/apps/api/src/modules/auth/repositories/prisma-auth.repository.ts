@@ -10,10 +10,24 @@ import {
 import type {
   AuthRepository,
   CreateEmailVerificationTokenInput,
+  CreateRefreshTokenInput,
   EmailVerificationTokenRecord,
+  RefreshTokenRecord,
   RegisterUserInput,
   RegisterUserResult,
+  RotateRefreshTokenInput,
+  RotateRefreshTokenResult,
 } from '../interfaces/auth-repository.interface';
+
+const refreshTokenSelect = {
+  id: true,
+  userId: true,
+  tokenHash: true,
+  expiresAt: true,
+  revokedAt: true,
+  createdAt: true,
+  replacedByTokenId: true,
+} as const;
 
 @Injectable()
 export class PrismaAuthRepository implements AuthRepository {
@@ -130,6 +144,74 @@ export class PrismaAuthRepository implements AuthRepository {
   async deleteEmailVerificationToken(id: string): Promise<void> {
     await this.prisma.emailVerificationToken.delete({
       where: { id },
+    });
+  }
+
+  async createRefreshToken(input: CreateRefreshTokenInput): Promise<RefreshTokenRecord> {
+    return this.prisma.refreshToken.create({
+      data: {
+        userId: input.userId,
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt,
+      },
+      select: refreshTokenSelect,
+    });
+  }
+
+  async findRefreshTokenByHash(tokenHash: string): Promise<RefreshTokenRecord | null> {
+    return this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      select: refreshTokenSelect,
+    });
+  }
+
+  async rotateRefreshToken(
+    input: RotateRefreshTokenInput,
+  ): Promise<RotateRefreshTokenResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const newToken = await tx.refreshToken.create({
+        data: {
+          userId: input.userId,
+          tokenHash: input.newTokenHash,
+          expiresAt: input.newExpiresAt,
+        },
+        select: refreshTokenSelect,
+      });
+
+      const revokedToken = await tx.refreshToken.update({
+        where: { id: input.currentTokenId },
+        data: {
+          revokedAt: new Date(),
+          replacedByTokenId: newToken.id,
+        },
+        select: refreshTokenSelect,
+      });
+
+      return { newToken, revokedToken };
+    });
+  }
+
+  async revokeRefreshToken(id: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        id,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+  }
+
+  async revokeAllRefreshTokensForUser(userId: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
     });
   }
 

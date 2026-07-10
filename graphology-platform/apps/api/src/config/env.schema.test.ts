@@ -7,6 +7,7 @@ const validEnv = {
   DATABASE_URL: 'postgresql://graphology:graphology@localhost:5432/graphology?schema=public',
   DIRECT_URL: 'postgresql://graphology:graphology@localhost:5432/graphology?schema=public',
   JWT_SECRET: 'change-me-in-production',
+  REFRESH_TOKEN_SECRET: 'change-me-refresh-secret',
   RESEND_API_KEY: 're_placeholder',
   EMAIL_FROM: 'noreply@example.com',
   RAZORPAY_KEY_ID: 'rzp_placeholder',
@@ -58,6 +59,26 @@ describe('validateEnv', () => {
     });
 
     expect(config.FRONTEND_URL).toBe('http://localhost:3000');
+  });
+
+  it('accepts JWT_REFRESH_SECRET as an alias for REFRESH_TOKEN_SECRET', () => {
+    const config = validateEnv({
+      ...validEnv,
+      REFRESH_TOKEN_SECRET: undefined,
+      JWT_REFRESH_SECRET: 'legacy-refresh-secret',
+    });
+
+    expect(config.REFRESH_TOKEN_SECRET).toBe('legacy-refresh-secret');
+  });
+
+  it('accepts JWT_REFRESH_EXPIRATION as an alias for REFRESH_TOKEN_EXPIRES_IN', () => {
+    const config = validateEnv({
+      ...validEnv,
+      REFRESH_TOKEN_EXPIRES_IN: undefined,
+      JWT_REFRESH_EXPIRATION: '14d',
+    });
+
+    expect(config.REFRESH_TOKEN_EXPIRES_IN).toBe('14d');
   });
 
   it('fails fast when required variables are missing', () => {

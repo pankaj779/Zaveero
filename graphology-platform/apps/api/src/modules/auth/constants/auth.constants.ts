@@ -14,7 +14,7 @@ export const AUTH_COOKIE_NAMES = {
 
 export const AUTH_EXPIRATION_NAMES = {
   accessToken: 'JWT_EXPIRES_IN',
-  refreshToken: 'JWT_REFRESH_EXPIRATION',
+  refreshToken: 'REFRESH_TOKEN_EXPIRES_IN',
 } as const;
 
 export const AUTH_ROLES = {

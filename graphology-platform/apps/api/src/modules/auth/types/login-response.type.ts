@@ -7,6 +7,13 @@ export interface LoginUserSummary {
 
 export interface LoginResponseData {
   accessToken: string;
+  refreshToken: string;
   expiresIn: string;
   user: LoginUserSummary;
+}
+
+export interface RefreshResponseData {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: string;
 }

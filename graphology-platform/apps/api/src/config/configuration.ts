@@ -21,10 +21,14 @@ export default (): EnvConfig => {
     DIRECT_URL: process.env.DIRECT_URL ?? '',
     JWT_SECRET: process.env.JWT_SECRET ?? '',
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
+    REFRESH_TOKEN_SECRET:
+      process.env.REFRESH_TOKEN_SECRET ?? process.env.JWT_REFRESH_SECRET ?? '',
     JWT_EXPIRES_IN:
       process.env.JWT_EXPIRES_IN ?? process.env.JWT_ACCESS_EXPIRATION ?? '15m',
     JWT_ACCESS_EXPIRATION: process.env.JWT_ACCESS_EXPIRATION,
-    JWT_REFRESH_EXPIRATION: process.env.JWT_REFRESH_EXPIRATION ?? '7d',
+    JWT_REFRESH_EXPIRATION: process.env.JWT_REFRESH_EXPIRATION,
+    REFRESH_TOKEN_EXPIRES_IN:
+      process.env.REFRESH_TOKEN_EXPIRES_IN ?? process.env.JWT_REFRESH_EXPIRATION ?? '7d',
     RESEND_API_KEY: process.env.RESEND_API_KEY ?? '',
     EMAIL_FROM:
       process.env.EMAIL_FROM ?? process.env.RESEND_FROM_EMAIL ?? 'noreply@example.com',

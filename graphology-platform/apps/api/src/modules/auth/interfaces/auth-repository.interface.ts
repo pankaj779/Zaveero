@@ -40,6 +40,34 @@ export interface EmailVerificationTokenRecord {
   createdAt: Date;
 }
 
+export interface RefreshTokenRecord {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  revokedAt: Date | null;
+  createdAt: Date;
+  replacedByTokenId: string | null;
+}
+
+export interface CreateRefreshTokenInput {
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+}
+
+export interface RotateRefreshTokenInput {
+  currentTokenId: string;
+  userId: string;
+  newTokenHash: string;
+  newExpiresAt: Date;
+}
+
+export interface RotateRefreshTokenResult {
+  newToken: RefreshTokenRecord;
+  revokedToken: RefreshTokenRecord;
+}
+
 /**
  * Abstraction for authentication-related persistence.
  * Services must depend on this interface, never Prisma directly.
@@ -47,9 +75,6 @@ export interface EmailVerificationTokenRecord {
 export interface AuthRepository {
   readonly marker: 'auth-repository';
 
-  /**
-   * Creates a user, organization membership, and role assignment in one transaction.
-   */
   registerUser(input: RegisterUserInput): Promise<RegisterUserResult>;
 
   createEmailVerificationToken(
@@ -63,4 +88,14 @@ export interface AuthRepository {
   deleteEmailVerificationTokensForUser(userId: string): Promise<void>;
 
   deleteEmailVerificationToken(id: string): Promise<void>;
+
+  createRefreshToken(input: CreateRefreshTokenInput): Promise<RefreshTokenRecord>;
+
+  findRefreshTokenByHash(tokenHash: string): Promise<RefreshTokenRecord | null>;
+
+  rotateRefreshToken(input: RotateRefreshTokenInput): Promise<RotateRefreshTokenResult>;
+
+  revokeRefreshToken(id: string): Promise<void>;
+
+  revokeAllRefreshTokensForUser(userId: string): Promise<void>;
 }

@@ -15,9 +15,11 @@ export const envSchema = z.object({
   DIRECT_URL: nonEmptyString,
   JWT_SECRET: nonEmptyString,
   JWT_REFRESH_SECRET: nonEmptyString.optional(),
+  REFRESH_TOKEN_SECRET: nonEmptyString,
   JWT_EXPIRES_IN: z.string().default('15m'),
   JWT_ACCESS_EXPIRATION: z.string().optional(),
-  JWT_REFRESH_EXPIRATION: z.string().default('7d'),
+  JWT_REFRESH_EXPIRATION: z.string().optional(),
+  REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
   RESEND_API_KEY: nonEmptyString,
   EMAIL_FROM: z.string().email(),
   RESEND_FROM_EMAIL: z.string().email().optional(),
@@ -39,6 +41,9 @@ export function validateEnv(config: Record<string, unknown>): EnvConfig {
     JWT_EXPIRES_IN: config.JWT_EXPIRES_IN ?? config.JWT_ACCESS_EXPIRATION,
     FRONTEND_URL: config.FRONTEND_URL ?? config.APP_URL ?? 'http://localhost:3000',
     EMAIL_FROM: config.EMAIL_FROM ?? config.RESEND_FROM_EMAIL,
+    REFRESH_TOKEN_SECRET: config.REFRESH_TOKEN_SECRET ?? config.JWT_REFRESH_SECRET,
+    REFRESH_TOKEN_EXPIRES_IN:
+      config.REFRESH_TOKEN_EXPIRES_IN ?? config.JWT_REFRESH_EXPIRATION ?? '7d',
   };
 
   const parsed = envSchema.safeParse(normalized);

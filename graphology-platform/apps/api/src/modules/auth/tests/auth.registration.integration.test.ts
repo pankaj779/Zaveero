@@ -25,6 +25,10 @@ const shouldRunDatabaseTests = process.env.RUN_DATABASE_TESTS === 'true';
 describe.runIf(shouldRunDatabaseTests)('Auth registration, login, and email verification', () => {
   const jwtSecret = process.env.JWT_SECRET ?? 'test-jwt-secret';
   const jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? process.env.JWT_ACCESS_EXPIRATION ?? '15m';
+  const refreshSecret =
+    process.env.REFRESH_TOKEN_SECRET ?? process.env.JWT_REFRESH_SECRET ?? 'test-refresh-secret';
+  const refreshExpiresIn =
+    process.env.REFRESH_TOKEN_EXPIRES_IN ?? process.env.JWT_REFRESH_EXPIRATION ?? '7d';
 
   const authRepository = new PrismaAuthRepository(prisma);
   const userRepository = new PrismaUserRepository(prisma);
@@ -36,6 +40,12 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration, login, and email veri
       }
       if (key === 'JWT_SECRET') {
         return jwtSecret;
+      }
+      if (key === 'REFRESH_TOKEN_SECRET') {
+        return refreshSecret;
+      }
+      if (key === 'REFRESH_TOKEN_EXPIRES_IN') {
+        return refreshExpiresIn;
       }
       if (key === 'FRONTEND_URL') {
         return process.env.FRONTEND_URL ?? 'http://localhost:3000';
@@ -63,6 +73,7 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration, login, and email veri
   const password = 'SecurePass1!';
   let createdUserId: string | undefined;
   let latestRawToken: string | undefined;
+  let currentRefreshToken: string | undefined;
 
   beforeAll(async () => {
     await prisma.$connect();
@@ -76,6 +87,7 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration, login, and email veri
 
   afterAll(async () => {
     if (createdUserId) {
+      await prisma.refreshToken.deleteMany({ where: { userId: createdUserId } });
       await prisma.emailVerificationToken.deleteMany({ where: { userId: createdUserId } });
       await prisma.userRole.deleteMany({ where: { userId: createdUserId } });
       await prisma.organizationMember.deleteMany({ where: { userId: createdUserId } });
@@ -164,15 +176,60 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration, login, and email veri
     expect(result.message).toBe('Email is already verified.');
   });
 
-  it('logs in successfully and returns a verifiable JWT', async () => {
-    const result = await service.login({ email, password });
+  it('logs in successfully, stores hashed refresh token, and rotates on refresh', async () => {
+    const loginResult = await service.login({ email, password });
 
-    expect(result.message).toBe('Login successful.');
+    expect(loginResult.message).toBe('Login successful.');
+    expect(loginResult.data.refreshToken).toBeTruthy();
+    currentRefreshToken = loginResult.data.refreshToken;
+
+    const stored = await prisma.refreshToken.findMany({
+      where: { userId: createdUserId, revokedAt: null },
+    });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.tokenHash).not.toBe(currentRefreshToken);
+    expect(stored[0]?.tokenHash).toBe(
+      tokenService.hashIncomingRefreshToken(currentRefreshToken),
+    );
+
     const payload = await jwtService.verifyAsync<{ sub: string; email: string; type: string }>(
-      result.data.accessToken,
+      loginResult.data.accessToken,
     );
     expect(payload.sub).toBe(createdUserId);
     expect(payload.type).toBe('access');
+
+    const refreshResult = await service.refresh({ refreshToken: currentRefreshToken });
+    expect(refreshResult.message).toBe('Token refreshed successfully.');
+    expect(refreshResult.data.refreshToken).not.toBe(currentRefreshToken);
+
+    const oldToken = currentRefreshToken;
+    currentRefreshToken = refreshResult.data.refreshToken;
+
+    const revoked = await prisma.refreshToken.findMany({
+      where: { userId: createdUserId, revokedAt: { not: null } },
+    });
+    expect(revoked.length).toBeGreaterThan(0);
+    expect(revoked[0]?.replacedByTokenId).toBeTruthy();
+
+    await expect(service.refresh({ refreshToken: oldToken })).rejects.toBeInstanceOf(
+      TokenInvalidException,
+    );
+  });
+
+  it('logs out successfully and rejects the revoked refresh token', async () => {
+    if (!currentRefreshToken) {
+      throw new Error('Expected current refresh token');
+    }
+
+    const logoutResult = await service.logout({ refreshToken: currentRefreshToken });
+    expect(logoutResult.message).toBe('Logged out successfully.');
+
+    await expect(
+      service.refresh({ refreshToken: currentRefreshToken }),
+    ).rejects.toBeInstanceOf(TokenInvalidException);
+
+    const unknownLogout = await service.logout({ refreshToken: 'already-invalid' });
+    expect(unknownLogout.message).toBe('Logged out successfully.');
   });
 
   it('rejects duplicate email registration', async () => {
