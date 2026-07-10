@@ -79,14 +79,9 @@ export interface FooterColumn {
 }
 
 export interface FooterConfig {
-  blurb: string;
-  newsletter: {
-    title: string;
-    helper: string;
-    placeholder: string;
-    ctaLabel: string;
-  };
   columns: FooterColumn[];
+  version: string;
+  poweredByPrefix: string;
 }
 
 export interface ContactConfig {

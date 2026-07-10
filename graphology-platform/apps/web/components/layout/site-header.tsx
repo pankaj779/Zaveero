@@ -73,10 +73,10 @@ export function SiteHeader(): React.JSX.Element {
           {brandLabel}
         </Link>
 
-        <nav className="hidden items-center gap-8 laptop:flex" aria-label="Primary">
+        <nav className="hidden items-center gap-6 laptop:flex desktop:gap-8" aria-label="Primary">
           {primary.map((item) => (
             <Link
-              key={item.href}
+              key={`${item.label}-${item.href}`}
               href={item.href}
               className="text-sm font-medium text-muted-foreground transition-colors duration-normal hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
@@ -86,9 +86,6 @@ export function SiteHeader(): React.JSX.Element {
         </nav>
 
         <div className="hidden items-center gap-2 laptop:flex">
-          <Button variant="ghost" size="md" asChild>
-            <Link href={auth.login.href}>{auth.login.label}</Link>
-          </Button>
           <Button variant="primary" size="md" asChild>
             <Link href={auth.cta.href}>{auth.cta.label}</Link>
           </Button>
@@ -148,7 +145,7 @@ export function SiteHeader(): React.JSX.Element {
               </div>
               <ul className="flex flex-col gap-1">
                 {primary.map((item) => (
-                  <li key={item.href}>
+                  <li key={`${item.label}-${item.href}`}>
                     <Link
                       href={item.href}
                       className="block rounded-md px-3 py-2 text-sm font-medium text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -159,13 +156,8 @@ export function SiteHeader(): React.JSX.Element {
                   </li>
                 ))}
               </ul>
-              <div className="mt-auto flex flex-col gap-2">
-                <Button variant="outline" size="md" asChild>
-                  <Link href={auth.login.href} onClick={closeMenu}>
-                    {auth.login.label}
-                  </Link>
-                </Button>
-                <Button variant="primary" size="md" asChild>
+              <div className="mt-auto">
+                <Button variant="primary" size="md" className="w-full" asChild>
                   <Link href={auth.cta.href} onClick={closeMenu}>
                     {auth.cta.label}
                   </Link>

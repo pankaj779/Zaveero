@@ -1,16 +1,11 @@
 import type { FooterConfig } from '../brand/types';
 import { brandConfig } from '../brand/brand.config';
 import { ROUTES } from '../constants/routes';
+import packageJson from '../../package.json';
 
 export const footerConfig: FooterConfig = {
-  blurb:
-    'Structured learning with live mentorship and practical skill development.',
-  newsletter: {
-    title: 'Newsletter',
-    helper: 'Newsletter signup coming soon.',
-    placeholder: brandConfig.email,
-    ctaLabel: 'Subscribe',
-  },
+  version: `v${packageJson.version}`,
+  poweredByPrefix: 'Powered by',
   columns: [
     {
       title: 'Company',
@@ -21,9 +16,9 @@ export const footerConfig: FooterConfig = {
       ],
     },
     {
-      title: 'Courses',
+      title: 'Programs',
       links: [
-        { label: 'All Courses', href: ROUTES.courses },
+        { label: 'All Programs', href: ROUTES.programs },
         { label: 'Learning Journey', href: ROUTES.journey },
         { label: 'Benefits', href: ROUTES.benefits },
       ],

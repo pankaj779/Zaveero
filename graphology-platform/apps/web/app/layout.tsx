@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import '@graphology/ui/globals.css';
 import './globals.css';
-import { SiteShell } from '../components/layout/site-shell';
+import { ThemeProvider } from '../components/providers/theme-provider';
 import { companySettings } from '../lib/config';
 import { buildPageMetadata } from '../lib/seo';
 import { themeConfig } from '../lib/theme';
@@ -32,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang={companySettings.languages[0] ?? 'en'} suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`}>
-        <SiteShell>{children}</SiteShell>
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

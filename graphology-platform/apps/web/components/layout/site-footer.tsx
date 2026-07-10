@@ -1,4 +1,4 @@
-import { Button, Separator } from '@graphology/ui';
+import { Separator } from '@graphology/ui';
 import Link from 'next/link';
 import { brandConfig } from '../../lib/brand';
 import { footerConfig } from '../../lib/config';
@@ -9,29 +9,9 @@ export function SiteFooter(): React.JSX.Element {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="border-t border-border bg-surface" id="contact">
+    <footer className="border-t border-border bg-surface">
       <div className="mx-auto max-w-7xl px-4 py-12 tablet:px-6 desktop:px-8 laptop:py-16">
-        <div className="grid gap-10 laptop:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))]">
-          <div className="space-y-4">
-            <p className="text-sm font-semibold tracking-tight">{brandConfig.company.name}</p>
-            <p className="max-w-xs text-small text-muted-foreground">{footerConfig.blurb}</p>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">{footerConfig.newsletter.title}</p>
-              <p className="text-caption">{footerConfig.newsletter.helper}</p>
-              <div className="flex max-w-sm gap-2">
-                <div
-                  className="flex h-10 flex-1 items-center rounded-md border border-dashed border-border px-3 text-sm text-muted-foreground"
-                  aria-hidden
-                >
-                  {footerConfig.newsletter.placeholder}
-                </div>
-                <Button type="button" variant="secondary" size="md" disabled>
-                  {footerConfig.newsletter.ctaLabel}
-                </Button>
-              </div>
-            </div>
-          </div>
-
+        <div className="grid gap-10 tablet:grid-cols-2 laptop:grid-cols-4">
           {footerConfig.columns.map((column) => (
             <div key={column.title} className="space-y-3">
               <p className="text-sm font-semibold">{column.title}</p>
@@ -53,7 +33,7 @@ export function SiteFooter(): React.JSX.Element {
 
         <Separator className="my-8" />
 
-        <div className="flex flex-col gap-4 tablet:flex-row tablet:items-center tablet:justify-between">
+        <div className="flex flex-col gap-4 laptop:flex-row laptop:items-center laptop:justify-between">
           <p className="text-caption">{formatCopyright(year)}</p>
           <ul className="flex items-center gap-2" aria-label="Social links">
             {brandConfig.social.map((item) => {
@@ -71,6 +51,13 @@ export function SiteFooter(): React.JSX.Element {
               );
             })}
           </ul>
+          <div className="flex flex-wrap items-center gap-3 text-caption text-muted-foreground">
+            <span>{footerConfig.version}</span>
+            <span aria-hidden>·</span>
+            <span>
+              {footerConfig.poweredByPrefix} {brandConfig.company.parentName}
+            </span>
+          </div>
         </div>
       </div>
     </footer>

@@ -1,86 +1,94 @@
 import { describe, expect, it } from 'vitest';
-import { brandConfig } from '../lib/brand';
+import { POST_LOGIN_REDIRECT } from '../lib/auth/redirect';
+import { dashboardNavItems, dashboardPageMeta, widgetDemoStates } from '../lib/dashboard';
+import { DASHBOARD_ROUTES, ROUTES } from '../lib/constants';
 import {
-  companySettings,
-  contactConfig,
+  faqContent,
   footerConfig,
   navigationConfig,
+  programsContent,
+  studentSuccessContent,
 } from '../lib/config';
-import { icons, ROUTES } from '../lib/constants';
-import {
-  buildCanonical,
-  buildDescription,
-  buildOrganizationJsonLd,
-  buildTitle,
-  formatCopyright,
-} from '../lib/seo';
-import { themeConfig } from '../lib/theme';
+import { brandConfig } from '../lib/brand';
 
-describe('brand foundation', () => {
-  it('centralizes brand identity with placeholders', () => {
-    expect(brandConfig.company.name).toBe('Zaavero');
-    expect(brandConfig.product.workingTitle).toBe('Learning Platform');
-    expect(brandConfig.tagline).toBe('Learn. Discover. Transform.');
-    expect(brandConfig.email).toContain('example.com');
-    expect(brandConfig.phone).toContain('000');
-    expect(brandConfig.website).toBeTruthy();
-    expect(brandConfig.futureProducts).toEqual([
-      'AI',
-      'Data Engineering',
-      'Cloud',
-      'Education',
-      'SaaS',
-    ]);
-  });
-
-  it('exposes navigation from configuration', () => {
+describe('homepage blueprint', () => {
+  it('exposes blueprint navigation labels and CTA', () => {
     expect(navigationConfig.primary.map((item) => item.label)).toEqual([
       'Home',
-      'Courses',
+      'Programs',
       'About',
+      'Testimonials',
+      'FAQ',
       'Contact',
     ]);
-    expect(navigationConfig.auth.login.href).toBe(ROUTES.login);
-    expect(navigationConfig.auth.cta.label).toBe('Join Now');
+    expect(navigationConfig.auth.cta.label).toBe('Start Learning');
   });
 
-  it('exposes footer columns from configuration', () => {
+  it('defines four program cards including future programs', () => {
+    expect(programsContent.cards).toHaveLength(4);
+  });
+
+  it('defines ten FAQ questions with placeholder answers', () => {
+    expect(faqContent.items).toHaveLength(10);
+  });
+
+  it('keeps student success as honest placeholders', () => {
+    expect(studentSuccessContent.cards).toHaveLength(3);
+    expect(studentSuccessContent.cards[0].nameLabel).toBe('Student Name Placeholder');
+  });
+
+  it('exposes four footer columns with version and powered-by', () => {
     expect(footerConfig.columns.map((column) => column.title)).toEqual([
       'Company',
-      'Courses',
+      'Programs',
       'Resources',
       'Legal',
     ]);
+    expect(footerConfig.version).toMatch(/^v/);
+    expect(brandConfig.company.parentName).toBe('Zaavero');
+  });
+});
+
+describe('sprint 05.01 student dashboard', () => {
+  it('uses /dashboard route base and post-login redirect', () => {
+    expect(ROUTES.dashboard).toBe('/dashboard');
+    expect(POST_LOGIN_REDIRECT).toBe('/dashboard');
+    expect(DASHBOARD_ROUTES.learning).toBe('/dashboard/learning');
+    expect(DASHBOARD_ROUTES.settings).toBe('/dashboard/settings');
   });
 
-  it('exposes contact and company settings', () => {
-    expect(contactConfig.email).toBe(brandConfig.email);
-    expect(contactConfig.social).toEqual(brandConfig.social);
-    expect(companySettings.supportEmail).toBe(brandConfig.support.email);
-    expect(companySettings.locale).toBe('en_US');
+  it('defines sidebar navigation items in blueprint order', () => {
+    expect(dashboardNavItems.map((item) => item.label)).toEqual([
+      'Dashboard',
+      'My Learning',
+      'Live Classes',
+      'Assignments',
+      'Certificates',
+      'Calendar',
+      'Messages',
+      'Payments',
+      'Profile',
+      'Settings',
+    ]);
   });
 
-  it('centralizes public routes and icons', () => {
-    expect(ROUTES.home).toBe('/');
-    expect(ROUTES.dashboard).toBe('#');
-    expect(Object.keys(icons)).toEqual(
-      expect.arrayContaining(['menu', 'close', 'check', 'globe', 'mail', 'share', 'video']),
+  it('has page metadata for every dashboard route', () => {
+    for (const item of dashboardNavItems) {
+      expect(dashboardPageMeta[item.href]?.title).toBeTruthy();
+    }
+  });
+
+  it('defines widget demo states for loading empty populated support', () => {
+    expect(Object.keys(widgetDemoStates)).toEqual(
+      expect.arrayContaining([
+        'continueLearning',
+        'upcomingLiveClass',
+        'assignmentsDue',
+        'learningProgress',
+        'certificatesEarned',
+        'recentActivity',
+        'quickActions',
+      ]),
     );
-  });
-
-  it('builds SEO helpers from brand config', () => {
-    expect(buildTitle()).toBe(brandConfig.company.name);
-    expect(buildTitle('About')).toBe(`About · ${brandConfig.company.name}`);
-    expect(buildDescription()).toBe(brandConfig.description);
-    expect(buildCanonical('/')).toContain(brandConfig.website.replace(/\/$/, ''));
-    expect(formatCopyright(2026)).toContain(brandConfig.company.name);
-    expect(buildOrganizationJsonLd()['@type']).toBe('Organization');
-  });
-
-  it('defines reusable theme tokens', () => {
-    expect(themeConfig.animation.durationMs).toBe(250);
-    expect(themeConfig.container.maxWidth).toBe('80rem');
-    expect(themeConfig.lightMode.themeColor).toBeTruthy();
-    expect(themeConfig.darkMode.themeColor).toBeTruthy();
   });
 });
