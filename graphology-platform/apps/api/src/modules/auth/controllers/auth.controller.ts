@@ -23,7 +23,10 @@ export class AuthController {
 
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Register a new user account' })
+  @ApiOperation({
+    summary: 'Register a new user account',
+    description: 'Creates a Student in Graphology Academy and sends email verification.',
+  })
   register(
     @Body() dto: RegisterDto,
   ): Promise<ControllerSuccessPayload<RegisterResponseData>> {
@@ -32,14 +35,20 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Authenticate with email and password' })
+  @ApiOperation({
+    summary: 'Authenticate with email and password',
+    description: 'Returns a JWT access token and an opaque refresh token.',
+  })
   login(@Body() dto: LoginDto): Promise<ControllerSuccessPayload<LoginResponseData>> {
     return this.authService.login(dto);
   }
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Rotate refresh token and issue a new access token' })
+  @ApiOperation({
+    summary: 'Rotate refresh token and issue a new access token',
+    description: 'Replay of a revoked refresh token revokes the entire token family.',
+  })
   refresh(
     @Body() dto: RefreshTokenDto,
   ): Promise<ControllerSuccessPayload<RefreshResponseData>> {
@@ -73,7 +82,10 @@ export class AuthController {
 
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request a password reset email' })
+  @ApiOperation({
+    summary: 'Request a password reset email',
+    description: 'Always returns the same success message to avoid email enumeration.',
+  })
   forgotPassword(
     @Body() dto: ForgotPasswordDto,
   ): Promise<ControllerSuccessPayload<null>> {
@@ -82,7 +94,10 @@ export class AuthController {
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reset password using a one-time reset token' })
+  @ApiOperation({
+    summary: 'Reset password using a one-time reset token',
+    description: 'Invalidates reset tokens and revokes all refresh sessions for the user.',
+  })
   resetPassword(
     @Body() dto: ResetPasswordDto,
   ): Promise<ControllerSuccessPayload<null>> {

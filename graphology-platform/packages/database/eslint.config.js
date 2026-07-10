@@ -2,7 +2,7 @@ import baseConfig from '@graphology/config/eslint/base';
 
 export default [
   {
-    ignores: ['prisma/**'],
+    ignores: ['prisma/**', 'dist/**', 'src/**/*.js', 'src/**/*.d.ts'],
   },
   ...baseConfig,
 ];

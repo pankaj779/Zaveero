@@ -11,14 +11,42 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20'
   PNPM_VERSION: '9.15.9'
+  DATABASE_URL: postgresql://graphology:graphology@localhost:5432/graphology?schema=public
+  DIRECT_URL: postgresql://graphology:graphology@localhost:5432/graphology?schema=public
+  JWT_SECRET: ci-jwt-secret-change-me
+  REFRESH_TOKEN_SECRET: ci-refresh-secret-change-me
+  RESEND_API_KEY: re_ci_placeholder
+  EMAIL_FROM: noreply@example.com
+  RAZORPAY_KEY_ID: rzp_ci_placeholder
+  RAZORPAY_SECRET: rzp_ci_secret_placeholder
+  FRONTEND_URL: http://localhost:3000
+  CI: true
 
 jobs:
   quality:
-    name: Lint, Typecheck, Build, Test
+    name: Quality (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['20', '22']
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: graphology
+          POSTGRES_PASSWORD: graphology
+          POSTGRES_DB: graphology
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U graphology -d graphology"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -32,7 +60,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ matrix.node-version }}
           cache: pnpm
 
       - name: Install dependencies
@@ -40,9 +68,9 @@ jobs:
 
       - name: Generate Prisma client
         run: pnpm --filter @graphology/database db:generate
-        env:
-          DATABASE_URL: postgresql://graphology:graphology@localhost:5432/graphology?schema=public
-          DIRECT_URL: postgresql://graphology:graphology@localhost:5432/graphology?schema=public
+
+      - name: Apply migrations
+        run: pnpm --filter @graphology/database exec prisma migrate deploy
 
       - name: Lint
         run: pnpm lint
@@ -53,12 +81,22 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm --filter @graphology/tests exec playwright install --with-deps chromium
+
+      - name: Install Playwright system deps
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @graphology/tests exec playwright install-deps chromium
 
       - name: Test
         run: pnpm test
         env:
-          DATABASE_URL: postgresql://graphology:graphology@localhost:5432/graphology?schema=public
-          DIRECT_URL: postgresql://graphology:graphology@localhost:5432/graphology?schema=public
-          CI: true
+          RUN_DATABASE_TESTS: 'true'

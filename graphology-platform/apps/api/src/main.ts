@@ -9,6 +9,7 @@ import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import type { EnvConfig } from './config/env.schema';
+import { SWAGGER_API_DESCRIPTION, SWAGGER_TAGS } from './config/swagger.config';
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
@@ -54,26 +55,33 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new ResponseInterceptor());
 
-  const swaggerConfig = new DocumentBuilder()
+  const swaggerBuilder = new DocumentBuilder()
     .setTitle(appName)
-    .setDescription('Graphology Platform REST API')
+    .setDescription(SWAGGER_API_DESCRIPTION)
     .setVersion('0.1.0')
     .addBearerAuth(
       {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'JWT access token (configured in a later authentication task)',
+        description:
+          'JWT access token from POST /api/v1/auth/login or /api/v1/auth/refresh. Do not send refresh tokens here.',
       },
       'access-token',
     )
     .addServer(`http://localhost:${String(port)}`, 'Local development')
-    .build();
+    .addServer('/api', 'Relative (same host)');
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  for (const tag of SWAGGER_TAGS) {
+    swaggerBuilder.addTag(tag.name, tag.description);
+  }
+
+  const document = SwaggerModule.createDocument(app, swaggerBuilder.build());
   SwaggerModule.setup('api/docs', app, document, {
     swaggerOptions: {
       persistAuthorization: true,
+      tagsSorter: 'alpha',
+      operationsSorter: 'alpha',
     },
   });
 

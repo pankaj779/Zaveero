@@ -1,6 +1,8 @@
 # System Architecture
 
-Version: 1.0
+Version: 1.1
+
+> Related: [ADRs](./adr/README.md) · [Tech Stack](./13_TECH_STACK.md) · [API Versioning](./API_VERSIONING.md)
 
 ---
 

@@ -1,0 +1,19 @@
+# Production-oriented overrides.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+#
+# Provide secrets via a real .env file (never commit secrets).
+
+services:
+  api:
+    environment:
+      NODE_ENV: production
+      RUN_MIGRATIONS: 'true'
+    restart: always
+
+  web:
+    environment:
+      NODE_ENV: production
+    restart: always
+
+  postgres:
+    restart: always

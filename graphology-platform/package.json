@@ -16,6 +16,10 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,mjs,cjs,json,md,css}\"",
     "clean": "turbo run clean",
     "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @graphology/database db:generate",
+    "db:migrate": "pnpm --filter @graphology/database db:migrate",
+    "db:migrate:deploy": "pnpm --filter @graphology/database db:migrate:deploy",
+    "db:seed": "pnpm --filter @graphology/database db:seed",
     "prepare": "husky"
   },
   "devDependencies": {

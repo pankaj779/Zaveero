@@ -1,4 +1,7 @@
-export type UserRole = 'admin' | 'teacher' | 'student';
+export type UserRole = 'Admin' | 'Teacher' | 'Student' | 'Parent';
+
+/** @deprecated Prefer UserRole; kept for transitional lowercase clients */
+export type UserRoleSlug = 'admin' | 'teacher' | 'student' | 'parent';
 
 export interface ApiSuccessResponse<T> {
   success: true;

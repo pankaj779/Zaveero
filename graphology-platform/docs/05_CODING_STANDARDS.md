@@ -1,6 +1,8 @@
 # Coding Standards
 
-Version: 1.0
+Version: 1.1
+
+> Related: [ADRs](./adr/README.md) · [Implementation Rules](./prompts/IMPLEMENTATION_RULES.md) · [API Standards](./07_API_STANDARDS.md)
 
 ---
 

@@ -1,6 +1,11 @@
 # Database Schema
 
-Version: 1.0
+Version: 1.1
+
+> **Source of truth:** [`packages/database/prisma/schema.prisma`](../packages/database/prisma/schema.prisma)  
+> Ops guide: [`packages/database/README.md`](../packages/database/README.md) · ADR: [ADR-002 Prisma](./adr/002-prisma.md)
+
+This document describes the intended domain model. Where it conflicts with Prisma, **Prisma wins**.
 
 ---
 
@@ -524,6 +529,24 @@ Create indexes on
 - teacher_id
 - batch_id
 - student_id
+
+---
+
+# Authentication Token Tables (implemented)
+
+These tables exist in Prisma and store **hashes only** (never raw tokens).
+
+## refresh_tokens
+
+- id, user_id, token_hash (unique), expires_at, revoked_at, replaced_by_token_id, created_at
+
+## email_verification_tokens
+
+- id, user_id, token_hash, expires_at, created_at
+
+## password_reset_tokens
+
+- id, user_id, token_hash, expires_at, used_at, created_at
 
 ---
 

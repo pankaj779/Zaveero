@@ -36,7 +36,9 @@ Foundation models:
 - `Permission` — granular permissions
 - `UserRole` — user-to-role mapping
 - `RolePermission` — role-to-permission mapping
-- `RefreshToken` — hashed refresh token storage
+- `RefreshToken` — hashed refresh token storage (rotation + family revoke)
+- `EmailVerificationToken` — hashed email verification tokens
+- `PasswordResetToken` — hashed password-reset tokens
 - `AuditLog` — immutable audit trail
 - `SystemSetting` — platform configuration key-value store
 
@@ -61,6 +63,8 @@ erDiagram
     Role ||--o{ RolePermission : grants
     Permission ||--o{ RolePermission : included
     User ||--o{ RefreshToken : owns
+    User ||--o{ EmailVerificationToken : verifies
+    User ||--o{ PasswordResetToken : resets
     User ||--o{ AuditLog : performs
 
     Organization {
@@ -115,6 +119,23 @@ erDiagram
         uuid id PK
         uuid user_id FK
         string token_hash
+        datetime expires_at
+        datetime revoked_at
+    }
+
+    EmailVerificationToken {
+        uuid id PK
+        uuid user_id FK
+        string token_hash
+        datetime expires_at
+    }
+
+    PasswordResetToken {
+        uuid id PK
+        uuid user_id FK
+        string token_hash
+        datetime expires_at
+        datetime used_at
     }
 
     AuditLog {
@@ -197,6 +218,18 @@ pnpm --filter @graphology/database db:seed
 ```
 
 Never run `db:migrate:reset` in production.
+
+## Migration history
+
+| Migration | Purpose |
+|-----------|---------|
+| `20260709132845_init` | Initial foundation schema |
+| `20260710083228` | Follow-up schema adjustment (legacy unnamed folder; do not rename) |
+| `20260710102622_email_verification_tokens` | Email verification tokens |
+| `20260710112500_password_reset_tokens` | Password reset tokens |
+| `20260710164424_refresh_token_rotation` | Refresh token rotation fields |
+
+Applied migrations must not be rewritten. New changes always get a new named migration.
 
 ## Commands
 
