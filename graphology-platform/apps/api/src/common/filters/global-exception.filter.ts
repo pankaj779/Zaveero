@@ -87,7 +87,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
       return {
         message,
-        errorCode: typeof payload.error === 'string' ? payload.error : undefined,
+        errorCode:
+          typeof payload.errorCode === 'string'
+            ? payload.errorCode
+            : typeof payload.error === 'string'
+              ? payload.error
+              : undefined,
         errors,
       };
     }

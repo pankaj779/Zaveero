@@ -5,11 +5,11 @@ import type { AuthUserRecord } from './auth-repository.interface';
  * Services must depend on this interface, never Prisma directly.
  */
 export interface UserRepository {
-  /**
-   * Reserved for future user persistence operations.
-   * Intentionally empty in the foundation task.
-   */
   readonly marker: 'user-repository';
+
+  findByEmail(email: string): Promise<AuthUserRecord | null>;
+
+  findByPhone(phone: string): Promise<AuthUserRecord | null>;
 }
 
 export type { AuthUserRecord };

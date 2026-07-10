@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { PrismaClient } from '@graphology/database';
 import { PRISMA_CLIENT } from '../../../database/database.constants';
+import type { AuthUserRecord } from '../interfaces/auth-repository.interface';
 import type { UserRepository } from '../interfaces/user-repository.interface';
 
 @Injectable()
@@ -12,11 +13,41 @@ export class PrismaUserRepository implements UserRepository {
     private readonly prisma: PrismaClient,
   ) {}
 
-  /**
-   * Prisma client is injected for future user persistence methods.
-   * No business methods are implemented in this foundation task.
-   */
-  protected get client(): PrismaClient {
-    return this.prisma;
+  async findByEmail(email: string): Promise<AuthUserRecord | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        passwordHash: true,
+        emailVerified: true,
+        isActive: true,
+        deletedAt: true,
+      },
+    });
+
+    return user;
+  }
+
+  async findByPhone(phone: string): Promise<AuthUserRecord | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { phone },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        passwordHash: true,
+        emailVerified: true,
+        isActive: true,
+        deletedAt: true,
+      },
+    });
+
+    return user;
   }
 }

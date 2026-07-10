@@ -3,10 +3,27 @@ export interface AuthUserRecord {
   email: string;
   firstName: string;
   lastName: string;
+  phone: string | null;
   passwordHash: string;
   emailVerified: boolean;
   isActive: boolean;
   deletedAt: Date | null;
+}
+
+export interface RegisterUserInput {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  passwordHash: string;
+  organizationSlug: string;
+  roleName: string;
+}
+
+export interface RegisterUserResult {
+  userId: string;
+  email: string;
+  organizationName: string;
 }
 
 /**
@@ -14,9 +31,10 @@ export interface AuthUserRecord {
  * Services must depend on this interface, never Prisma directly.
  */
 export interface AuthRepository {
-  /**
-   * Reserved for future authentication persistence operations.
-   * Intentionally empty in the foundation task.
-   */
   readonly marker: 'auth-repository';
+
+  /**
+   * Creates a user, organization membership, and role assignment in one transaction.
+   */
+  registerUser(input: RegisterUserInput): Promise<RegisterUserResult>;
 }

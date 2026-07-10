@@ -24,6 +24,13 @@ export const AUTH_ROLES = {
   parent: 'Parent',
 } as const;
 
+export const DEFAULT_ORGANIZATION = {
+  name: 'Graphology Academy',
+  slug: 'graphology-academy',
+} as const;
+
+export const DEFAULT_REGISTRATION_ROLE = AUTH_ROLES.student;
+
 export type AuthRoleName = (typeof AUTH_ROLES)[keyof typeof AUTH_ROLES];
 
 export const AUTH_PERMISSIONS = {

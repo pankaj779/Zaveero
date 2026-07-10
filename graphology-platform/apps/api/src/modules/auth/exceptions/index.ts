@@ -1,6 +1,9 @@
 export { InvalidCredentialsException } from './invalid-credentials.exception';
 export { EmailAlreadyExistsException } from './email-already-exists.exception';
+export { PhoneAlreadyExistsException } from './phone-already-exists.exception';
 export { AccountDisabledException } from './account-disabled.exception';
 export { EmailNotVerifiedException } from './email-not-verified.exception';
 export { TokenExpiredException } from './token-expired.exception';
 export { TokenInvalidException } from './token-invalid.exception';
+export { OrganizationNotFoundException } from './organization-not-found.exception';
+export { DefaultRoleNotFoundException } from './default-role-not-found.exception';

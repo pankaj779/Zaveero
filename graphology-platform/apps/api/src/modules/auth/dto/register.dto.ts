@@ -1,21 +1,38 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class RegisterDto {
   @ApiProperty({ example: 'Ada' })
   @IsString()
   @MinLength(1)
   @MaxLength(100)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   firstName!: string;
 
   @ApiProperty({ example: 'Lovelace' })
   @IsString()
   @MinLength(1)
   @MaxLength(100)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   lastName!: string;
 
   @ApiProperty({ example: 'ada@example.com' })
   @IsEmail()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   email!: string;
 
   @ApiProperty({
@@ -30,4 +47,22 @@ export class RegisterDto {
       'password must include uppercase, lowercase, number, and special character',
   })
   password!: string;
+
+  @ApiPropertyOptional({
+    example: '+919876543210',
+    description: 'Optional E.164-style phone number',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\+?[1-9]\d{7,14}$/, {
+    message: 'phone must be a valid phone number',
+  })
+  @Transform(({ value }: { value: unknown }) => {
+    if (typeof value !== 'string') {
+      return value;
+    }
+    const trimmed = value.trim();
+    return trimmed.length === 0 ? undefined : trimmed;
+  })
+  phone?: string;
 }
