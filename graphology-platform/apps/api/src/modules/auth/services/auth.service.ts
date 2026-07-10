@@ -10,16 +10,23 @@ import {
   buildEmailVerificationText,
 } from '../../email/templates/email-verification.template';
 import {
+  buildPasswordResetHtml,
+  buildPasswordResetText,
+} from '../../email/templates/password-reset.template';
+import {
   DEFAULT_ORGANIZATION,
   DEFAULT_REGISTRATION_ROLE,
   EMAIL_VERIFICATION_EXPIRY_HOURS,
+  PASSWORD_RESET_EXPIRY_MINUTES,
 } from '../constants/auth.constants';
 import { AUTH_REPOSITORY, USER_REPOSITORY } from '../constants/injection-tokens';
+import type { ForgotPasswordDto } from '../dto/forgot-password.dto';
 import type { LoginDto } from '../dto/login.dto';
 import type { LogoutDto } from '../dto/logout.dto';
 import type { RefreshTokenDto } from '../dto/refresh-token.dto';
 import type { RegisterDto } from '../dto/register.dto';
 import type { ResendVerificationDto } from '../dto/resend-verification.dto';
+import type { ResetPasswordDto } from '../dto/reset-password.dto';
 import type { VerifyEmailDto } from '../dto/verify-email.dto';
 import {
   AccountDisabledException,
@@ -40,6 +47,10 @@ import {
   generateEmailVerificationToken,
   hashEmailVerificationToken,
 } from '../utils/email-verification-token.util';
+import {
+  generatePasswordResetToken,
+  hashPasswordResetToken,
+} from '../utils/password-reset-token.util';
 import { TokenService } from './token.service';
 
 @Injectable()
@@ -275,6 +286,106 @@ export class AuthService {
       message: genericMessage,
       data: null,
     };
+  }
+
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+  ): Promise<ControllerSuccessPayload<null>> {
+    const message =
+      'If an account exists, password reset instructions have been sent.';
+
+    const user = await this.userRepository.findByEmail(dto.email);
+
+    if (user && user.isActive && user.deletedAt === null) {
+      await this.issueAndSendPasswordResetEmail({
+        userId: user.id,
+        email: user.email,
+        firstName: user.firstName,
+      });
+    }
+
+    return {
+      message,
+      data: null,
+    };
+  }
+
+  async resetPassword(
+    dto: ResetPasswordDto,
+  ): Promise<ControllerSuccessPayload<null>> {
+    const tokenHash = hashPasswordResetToken(dto.token);
+    const record = await this.authRepository.findPasswordResetTokenByHash(tokenHash);
+
+    if (record?.usedAt !== null) {
+      throw new TokenInvalidException('Password reset token is invalid.');
+    }
+
+    if (record.expiresAt.getTime() <= Date.now()) {
+      throw new TokenExpiredException('Password reset token has expired.');
+    }
+
+    const user = await this.userRepository.findById(record.userId);
+    if (!user || !user.isActive || user.deletedAt !== null) {
+      throw new TokenInvalidException('Password reset token is invalid.');
+    }
+
+    const passwordHash = await hash(dto.password);
+
+    await this.authRepository.completePasswordReset({
+      userId: user.id,
+      passwordHash,
+      resetTokenId: record.id,
+    });
+
+    return {
+      message: 'Password has been reset successfully.',
+      data: null,
+    };
+  }
+
+  private async issueAndSendPasswordResetEmail(input: {
+    userId: string;
+    email: string;
+    firstName: string;
+  }): Promise<void> {
+    const rawToken = generatePasswordResetToken();
+    const tokenHash = hashPasswordResetToken(rawToken);
+    const expiresAt = new Date(
+      Date.now() + PASSWORD_RESET_EXPIRY_MINUTES * 60 * 1000,
+    );
+
+    await this.authRepository.deletePasswordResetTokensForUser(input.userId);
+    await this.authRepository.createPasswordResetToken({
+      userId: input.userId,
+      tokenHash,
+      expiresAt,
+    });
+
+    const frontendUrl = this.configService.get('FRONTEND_URL', { infer: true });
+    const appName = this.configService.get('APP_NAME', { infer: true });
+    const resetUrl = new URL('/reset-password', frontendUrl);
+    resetUrl.searchParams.set('token', rawToken);
+
+    const templateInput = {
+      appName,
+      recipientName: input.firstName,
+      resetUrl: resetUrl.toString(),
+      expiresInMinutes: PASSWORD_RESET_EXPIRY_MINUTES,
+    };
+
+    try {
+      await this.emailService.sendEmail({
+        to: input.email,
+        subject: `Reset your password for ${appName}`,
+        html: buildPasswordResetHtml(templateInput),
+        text: buildPasswordResetText(templateInput),
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown email error';
+      this.logger.error(
+        `Failed to send password reset email for userId=${input.userId}: ${message}`,
+      );
+    }
   }
 
   private async issueAndSendVerificationEmail(input: {

@@ -66,6 +66,10 @@ describe('AuthService.refresh and logout', () => {
     rotateRefreshToken,
     revokeRefreshToken,
     revokeAllRefreshTokensForUser,
+    createPasswordResetToken: vi.fn(),
+    findPasswordResetTokenByHash: vi.fn(),
+    deletePasswordResetTokensForUser: vi.fn(),
+    completePasswordReset: vi.fn(),
   };
 
   const userRepository = {

@@ -1,11 +1,13 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { ControllerSuccessPayload } from '../../../common/interfaces/api-response.interface';
+import { ForgotPasswordDto } from '../dto/forgot-password.dto';
 import { LoginDto } from '../dto/login.dto';
 import { LogoutDto } from '../dto/logout.dto';
 import { RefreshTokenDto } from '../dto/refresh-token.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { ResendVerificationDto } from '../dto/resend-verification.dto';
+import { ResetPasswordDto } from '../dto/reset-password.dto';
 import { VerifyEmailDto } from '../dto/verify-email.dto';
 import { AuthService } from '../services/auth.service';
 import type {
@@ -67,5 +69,23 @@ export class AuthController {
     @Body() dto: ResendVerificationDto,
   ): Promise<ControllerSuccessPayload<null>> {
     return this.authService.resendVerification(dto);
+  }
+
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request a password reset email' })
+  forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<ControllerSuccessPayload<null>> {
+    return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using a one-time reset token' })
+  resetPassword(
+    @Body() dto: ResetPasswordDto,
+  ): Promise<ControllerSuccessPayload<null>> {
+    return this.authService.resetPassword(dto);
   }
 }

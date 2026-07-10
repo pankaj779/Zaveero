@@ -19,6 +19,7 @@ import { PrismaUserRepository } from '../repositories/prisma-user.repository';
 import { AuthService } from '../services/auth.service';
 import { TokenService } from '../services/token.service';
 import { hashEmailVerificationToken } from '../utils/email-verification-token.util';
+import { hashPasswordResetToken } from '../utils/password-reset-token.util';
 
 const shouldRunDatabaseTests = process.env.RUN_DATABASE_TESTS === 'true';
 
@@ -70,17 +71,23 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration, login, and email veri
   const suffix = Date.now().toString();
   const email = `auth-${suffix}@example.com`;
   const phone = `+9198${suffix.slice(-8)}`;
-  const password = 'SecurePass1!';
+  let password = 'SecurePass1!';
   let createdUserId: string | undefined;
   let latestRawToken: string | undefined;
   let currentRefreshToken: string | undefined;
+  let latestPasswordResetToken: string | undefined;
 
   beforeAll(async () => {
     await prisma.$connect();
 
-    sendEmail.mockImplementation((input: { html: string }) => {
+    sendEmail.mockImplementation((input: { html: string; subject?: string }) => {
       const match = /token=([^"&\s]+)/.exec(input.html);
-      latestRawToken = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+      const token = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+      if (input.subject?.includes('Reset your password')) {
+        latestPasswordResetToken = token;
+      } else {
+        latestRawToken = token;
+      }
       return Promise.resolve();
     });
   });
@@ -88,6 +95,7 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration, login, and email veri
   afterAll(async () => {
     if (createdUserId) {
       await prisma.refreshToken.deleteMany({ where: { userId: createdUserId } });
+      await prisma.passwordResetToken.deleteMany({ where: { userId: createdUserId } });
       await prisma.emailVerificationToken.deleteMany({ where: { userId: createdUserId } });
       await prisma.userRole.deleteMany({ where: { userId: createdUserId } });
       await prisma.organizationMember.deleteMany({ where: { userId: createdUserId } });
@@ -230,6 +238,61 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration, login, and email veri
 
     const unknownLogout = await service.logout({ refreshToken: 'already-invalid' });
     expect(unknownLogout.message).toBe('Logged out successfully.');
+  });
+
+  it('resets password, stores hashed reset tokens, and revokes refresh sessions', async () => {
+    const loginResult = await service.login({ email, password });
+    currentRefreshToken = loginResult.data.refreshToken;
+
+    const unknownForgot = await service.forgotPassword({
+      email: `missing-${suffix}@example.com`,
+    });
+    expect(unknownForgot.message).toBe(
+      'If an account exists, password reset instructions have been sent.',
+    );
+
+    const forgot = await service.forgotPassword({ email });
+    expect(forgot.message).toBe(
+      'If an account exists, password reset instructions have been sent.',
+    );
+    expect(latestPasswordResetToken).toBeTruthy();
+    if (!latestPasswordResetToken || !createdUserId) {
+      throw new Error('Expected password reset token');
+    }
+
+    const stored = await prisma.passwordResetToken.findMany({
+      where: { userId: createdUserId, usedAt: null },
+    });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.tokenHash).toBe(hashPasswordResetToken(latestPasswordResetToken));
+
+    const newPassword = 'BrandNewPass1!';
+    const reset = await service.resetPassword({
+      token: latestPasswordResetToken,
+      password: newPassword,
+    });
+    expect(reset.message).toBe('Password has been reset successfully.');
+
+    await expect(
+      service.resetPassword({
+        token: latestPasswordResetToken,
+        password: 'AnotherPass1!',
+      }),
+    ).rejects.toBeInstanceOf(TokenInvalidException);
+
+    const activeRefresh = await prisma.refreshToken.count({
+      where: { userId: createdUserId, revokedAt: null },
+    });
+    expect(activeRefresh).toBe(0);
+
+    await expect(service.login({ email, password })).rejects.toBeInstanceOf(
+      InvalidCredentialsException,
+    );
+
+    const relogin = await service.login({ email, password: newPassword });
+    expect(relogin.data.refreshToken).toBeTruthy();
+    currentRefreshToken = relogin.data.refreshToken;
+    password = newPassword;
   });
 
   it('rejects duplicate email registration', async () => {

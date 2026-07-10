@@ -33,6 +33,7 @@ model User {
   userRoles             UserRole[]
   refreshTokens         RefreshToken[]
   emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens   PasswordResetToken[]
   auditLogs             AuditLog[]
   organizationMembers   OrganizationMember[]
 
@@ -184,6 +185,21 @@ model EmailVerificationToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model AuditLog {

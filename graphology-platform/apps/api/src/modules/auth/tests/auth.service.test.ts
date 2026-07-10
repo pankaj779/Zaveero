@@ -48,6 +48,10 @@ function createMockAuthRepository(
     rotateRefreshToken: vi.fn(),
     revokeRefreshToken: vi.fn(),
     revokeAllRefreshTokensForUser: vi.fn(),
+    createPasswordResetToken: vi.fn(),
+    findPasswordResetTokenByHash: vi.fn(),
+    deletePasswordResetTokensForUser: vi.fn(),
+    completePasswordReset: vi.fn(),
     ...overrides,
   };
 }

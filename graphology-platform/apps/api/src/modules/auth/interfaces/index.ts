@@ -9,5 +9,8 @@ export type {
   CreateRefreshTokenInput,
   RotateRefreshTokenInput,
   RotateRefreshTokenResult,
+  CreatePasswordResetTokenInput,
+  PasswordResetTokenRecord,
+  CompletePasswordResetInput,
 } from './auth-repository.interface';
 export type { UserRepository } from './user-repository.interface';

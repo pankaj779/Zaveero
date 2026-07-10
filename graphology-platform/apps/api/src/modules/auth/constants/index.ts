@@ -8,6 +8,7 @@ export {
   DEFAULT_ORGANIZATION,
   DEFAULT_REGISTRATION_ROLE,
   EMAIL_VERIFICATION_EXPIRY_HOURS,
+  PASSWORD_RESET_EXPIRY_MINUTES,
   type AuthTokenType,
   type AuthRoleName,
   type AuthPermissionName,

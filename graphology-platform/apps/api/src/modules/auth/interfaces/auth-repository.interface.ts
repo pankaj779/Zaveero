@@ -68,6 +68,27 @@ export interface RotateRefreshTokenResult {
   revokedToken: RefreshTokenRecord;
 }
 
+export interface CreatePasswordResetTokenInput {
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+}
+
+export interface PasswordResetTokenRecord {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  usedAt: Date | null;
+  createdAt: Date;
+}
+
+export interface CompletePasswordResetInput {
+  userId: string;
+  passwordHash: string;
+  resetTokenId: string;
+}
+
 /**
  * Abstraction for authentication-related persistence.
  * Services must depend on this interface, never Prisma directly.
@@ -98,4 +119,20 @@ export interface AuthRepository {
   revokeRefreshToken(id: string): Promise<void>;
 
   revokeAllRefreshTokensForUser(userId: string): Promise<void>;
+
+  createPasswordResetToken(
+    input: CreatePasswordResetTokenInput,
+  ): Promise<PasswordResetTokenRecord>;
+
+  findPasswordResetTokenByHash(
+    tokenHash: string,
+  ): Promise<PasswordResetTokenRecord | null>;
+
+  deletePasswordResetTokensForUser(userId: string): Promise<void>;
+
+  /**
+   * Updates password, invalidates reset tokens, and revokes refresh tokens
+   * inside a single database transaction.
+   */
+  completePasswordReset(input: CompletePasswordResetInput): Promise<void>;
 }

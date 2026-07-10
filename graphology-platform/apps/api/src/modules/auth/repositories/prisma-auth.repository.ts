@@ -9,9 +9,12 @@ import {
 } from '../exceptions';
 import type {
   AuthRepository,
+  CompletePasswordResetInput,
   CreateEmailVerificationTokenInput,
+  CreatePasswordResetTokenInput,
   CreateRefreshTokenInput,
   EmailVerificationTokenRecord,
+  PasswordResetTokenRecord,
   RefreshTokenRecord,
   RegisterUserInput,
   RegisterUserResult,
@@ -212,6 +215,82 @@ export class PrismaAuthRepository implements AuthRepository {
       data: {
         revokedAt: new Date(),
       },
+    });
+  }
+
+  async createPasswordResetToken(
+    input: CreatePasswordResetTokenInput,
+  ): Promise<PasswordResetTokenRecord> {
+    return this.prisma.passwordResetToken.create({
+      data: {
+        userId: input.userId,
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt,
+      },
+      select: {
+        id: true,
+        userId: true,
+        tokenHash: true,
+        expiresAt: true,
+        usedAt: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async findPasswordResetTokenByHash(
+    tokenHash: string,
+  ): Promise<PasswordResetTokenRecord | null> {
+    return this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      select: {
+        id: true,
+        userId: true,
+        tokenHash: true,
+        expiresAt: true,
+        usedAt: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async deletePasswordResetTokensForUser(userId: string): Promise<void> {
+    await this.prisma.passwordResetToken.deleteMany({
+      where: { userId },
+    });
+  }
+
+  async completePasswordReset(input: CompletePasswordResetInput): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: input.userId },
+        data: { passwordHash: input.passwordHash },
+      });
+
+      const usedAt = new Date();
+
+      await tx.passwordResetToken.update({
+        where: { id: input.resetTokenId },
+        data: { usedAt },
+      });
+
+      await tx.passwordResetToken.updateMany({
+        where: {
+          userId: input.userId,
+          usedAt: null,
+        },
+        data: { usedAt },
+      });
+
+      await tx.refreshToken.updateMany({
+        where: {
+          userId: input.userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: usedAt,
+        },
+      });
     });
   }
 
