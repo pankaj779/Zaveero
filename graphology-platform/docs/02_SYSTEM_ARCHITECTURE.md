@@ -130,6 +130,40 @@ PostgreSQL Database
 
 ---
 
+# Multi-Tenant Organization Model
+
+The platform is designed as a multi-organization SaaS LMS from day one.
+
+Version 1 will operate with a single default organization (Graphology Academy), but the data model supports many institutes without schema redesign.
+
+## Tenant Boundary
+
+Organization
+
+↓
+
+OrganizationMember
+
+↓
+
+User
+
+Rules:
+
+- Users are global identity records.
+- Users are linked to organizations through `OrganizationMember`.
+- A user may belong to multiple organizations.
+- Future business entities (courses, batches, payments, certificates, etc.) must include `organizationId`.
+- Do not place `organizationId` directly on the `User` table.
+
+## Initial Tenant
+
+Name: Graphology Academy
+
+Slug: graphology-academy
+
+---
+
 # Application Modules
 
 The application should be divided into independent modules.
@@ -137,6 +171,8 @@ The application should be divided into independent modules.
 Authentication
 
 User Management
+
+Organization Management
 
 Course Management
 

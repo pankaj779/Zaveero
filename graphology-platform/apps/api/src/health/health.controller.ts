@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 interface HealthResponse {
   status: string;
@@ -11,9 +12,14 @@ interface StatusResponse {
   timestamp: string;
 }
 
-@Controller()
+@ApiTags('Health')
+@Controller({
+  path: '',
+  version: '1',
+})
 export class HealthController {
   @Get('health')
+  @ApiOperation({ summary: 'Liveness health check' })
   getHealth(): HealthResponse {
     return {
       status: 'healthy',
@@ -22,6 +28,7 @@ export class HealthController {
   }
 
   @Get('status')
+  @ApiOperation({ summary: 'Runtime status check' })
   getStatus(): StatusResponse {
     return {
       status: 'running',

@@ -1,3 +1,8 @@
 import baseConfig from '@graphology/config/eslint/base';
 
-export default [...baseConfig];
+export default [
+  {
+    ignores: ['prisma/**'],
+  },
+  ...baseConfig,
+];

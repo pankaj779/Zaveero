@@ -30,8 +30,12 @@ services:
       PORT: 3001
       HOST: 0.0.0.0
       DATABASE_URL: postgresql://graphology:graphology@postgres:5432/graphology?schema=public
+      DIRECT_URL: postgresql://graphology:graphology@postgres:5432/graphology?schema=public
       JWT_SECRET: development-secret-change-in-production
       JWT_REFRESH_SECRET: development-refresh-secret-change-in-production
+      RESEND_API_KEY: re_placeholder
+      RAZORPAY_KEY_ID: rzp_placeholder
+      RAZORPAY_SECRET: rzp_secret_placeholder
       CORS_ORIGIN: http://localhost:3000
     depends_on:
       postgres:

@@ -64,6 +64,47 @@ batch_id
 
 # Core Entities
 
+## Organizations
+
+Stores multi-tenant institute / academy records.
+
+Columns
+
+- id
+- name
+- slug
+- logo
+- website
+- email
+- phone
+- address
+- timezone
+- currency
+- language
+- is_active
+- created_at
+- updated_at
+
+---
+
+## Organization Members
+
+Many-to-many membership between users and organizations.
+
+Columns
+
+- id
+- organization_id
+- user_id
+- joined_at
+- status
+
+A user may belong to multiple organizations.
+
+Do not store organization_id directly on users.
+
+---
+
 ## Users
 
 Stores authentication and profile information.
@@ -404,6 +445,14 @@ Columns
 ---
 
 # Relationships
+
+Organization
+
+↓
+
+OrganizationMember
+
+↓
 
 User
 

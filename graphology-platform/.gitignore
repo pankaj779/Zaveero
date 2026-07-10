@@ -42,7 +42,6 @@ test-results/
 .nyc_output/
 
 # Prisma
-packages/database/prisma/migrations/**/migration_lock.toml
 
 # Docker
 .docker/
