@@ -43,7 +43,7 @@ describe('auth module foundation', () => {
     expect(AUTH_TOKEN_TYPES.access).toBe('access');
     expect(AUTH_TOKEN_TYPES.refresh).toBe('refresh');
     expect(AUTH_COOKIE_NAMES.accessToken).toBe('graphology_access_token');
-    expect(AUTH_EXPIRATION_NAMES.accessToken).toBe('JWT_ACCESS_EXPIRATION');
+    expect(AUTH_EXPIRATION_NAMES.accessToken).toBe('JWT_EXPIRES_IN');
     expect(AUTH_ROLES.admin).toBe('Admin');
     expect(AUTH_PERMISSIONS.courseCreate).toBe('course.create');
   });

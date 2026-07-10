@@ -1,8 +1,10 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { ControllerSuccessPayload } from '../../../common/interfaces/api-response.interface';
+import { LoginDto } from '../dto/login.dto';
 import { RegisterDto } from '../dto/register.dto';
 import { AuthService } from '../services/auth.service';
+import type { LoginResponseData } from '../types/login-response.type';
 import type { RegisterResponseData } from '../types/register-response.type';
 
 @ApiTags('Auth')
@@ -17,5 +19,12 @@ export class AuthController {
     @Body() dto: RegisterDto,
   ): Promise<ControllerSuccessPayload<RegisterResponseData>> {
     return this.authService.register(dto);
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Authenticate with email and password' })
+  login(@Body() dto: LoginDto): Promise<ControllerSuccessPayload<LoginResponseData>> {
+    return this.authService.login(dto);
   }
 }

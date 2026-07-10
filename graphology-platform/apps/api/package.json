@@ -20,6 +20,7 @@
     "@nestjs/common": "^11.1.2",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.1.2",
+    "@nestjs/jwt": "^11.0.2",
     "@nestjs/platform-express": "^11.1.2",
     "@nestjs/swagger": "^11.4.5",
     "argon2": "^0.43.0",

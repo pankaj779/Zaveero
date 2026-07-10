@@ -14,7 +14,8 @@ export const envSchema = z.object({
   DIRECT_URL: nonEmptyString,
   JWT_SECRET: nonEmptyString,
   JWT_REFRESH_SECRET: nonEmptyString.optional(),
-  JWT_ACCESS_EXPIRATION: z.string().default('15m'),
+  JWT_EXPIRES_IN: z.string().default('15m'),
+  JWT_ACCESS_EXPIRATION: z.string().optional(),
   JWT_REFRESH_EXPIRATION: z.string().default('7d'),
   RESEND_API_KEY: nonEmptyString,
   RESEND_FROM_EMAIL: z.string().email().optional(),
@@ -33,6 +34,7 @@ export function validateEnv(config: Record<string, unknown>): EnvConfig {
   const normalized: Record<string, unknown> = {
     ...config,
     RAZORPAY_SECRET: config.RAZORPAY_SECRET ?? config.RAZORPAY_KEY_SECRET,
+    JWT_EXPIRES_IN: config.JWT_EXPIRES_IN ?? config.JWT_ACCESS_EXPIRATION,
   };
 
   const parsed = envSchema.safeParse(normalized);

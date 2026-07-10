@@ -13,7 +13,7 @@ export const AUTH_COOKIE_NAMES = {
 } as const;
 
 export const AUTH_EXPIRATION_NAMES = {
-  accessToken: 'JWT_ACCESS_EXPIRATION',
+  accessToken: 'JWT_EXPIRES_IN',
   refreshToken: 'JWT_REFRESH_EXPIRATION',
 } as const;
 

@@ -29,6 +29,16 @@ describe('validateEnv', () => {
     expect(config.RAZORPAY_SECRET).toBe('rzp_secret_alias');
   });
 
+  it('accepts JWT_ACCESS_EXPIRATION as an alias for JWT_EXPIRES_IN', () => {
+    const config = validateEnv({
+      ...validEnv,
+      JWT_EXPIRES_IN: undefined,
+      JWT_ACCESS_EXPIRATION: '30m',
+    });
+
+    expect(config.JWT_EXPIRES_IN).toBe('30m');
+  });
+
   it('fails fast when required variables are missing', () => {
     expect(() =>
       validateEnv({
