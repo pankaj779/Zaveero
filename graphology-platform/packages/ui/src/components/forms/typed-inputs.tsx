@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Input, type InputProps } from '../ui/input.js';
+import { Input, type InputProps } from '../ui/input';
 
 export const PasswordInput = React.forwardRef<HTMLInputElement, InputProps>((props, ref) => (
   <Input ref={ref} type="password" autoComplete={props.autoComplete ?? 'current-password'} {...props} />

@@ -1,11 +1,11 @@
-export { Button, buttonVariants, type ButtonProps } from './button.js';
-export { Badge, badgeVariants, type BadgeProps } from './badge.js';
-export { Input, type InputProps } from './input.js';
-export { Textarea, type TextareaProps } from './textarea.js';
-export { Label } from './label.js';
-export { Checkbox } from './checkbox.js';
-export { RadioGroup, RadioGroupItem } from './radio-group.js';
-export { Switch } from './switch.js';
+export { Button, buttonVariants, type ButtonProps } from './button';
+export { Badge, badgeVariants, type BadgeProps } from './badge';
+export { Input, type InputProps } from './input';
+export { Textarea, type TextareaProps } from './textarea';
+export { Label } from './label';
+export { Checkbox } from './checkbox';
+export { RadioGroup, RadioGroupItem } from './radio-group';
+export { Switch } from './switch';
 export {
   Select,
   SelectContent,
@@ -13,7 +13,7 @@ export {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from './select.js';
+} from './select';
 export {
   Dialog,
   DialogClose,
@@ -24,7 +24,7 @@ export {
   DialogTitle,
   DialogTrigger,
   type DialogContentProps,
-} from './dialog.js';
+} from './dialog';
 export {
   Card,
   CardContent,
@@ -34,7 +34,7 @@ export {
   CardTitle,
   cardVariants,
   type CardProps,
-} from './card.js';
-export { Separator } from './separator.js';
-export { Typography, typographyVariants, type TypographyProps } from './typography.js';
-export { FadeIn } from './fade-in.js';
+} from './card';
+export { Separator } from './separator';
+export { Typography, typographyVariants, type TypographyProps } from './typography';
+export { FadeIn } from './fade-in';

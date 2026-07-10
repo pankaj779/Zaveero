@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { alertVariants } from './components/feedback/alert.js';
-import { badgeVariants } from './components/ui/badge.js';
-import { buttonVariants } from './components/ui/button.js';
-import { cardVariants } from './components/ui/card.js';
-import { typographyVariants } from './components/ui/typography.js';
+import { alertVariants } from './components/feedback/alert';
+import { badgeVariants } from './components/ui/badge';
+import { buttonVariants } from './components/ui/button';
+import { cardVariants } from './components/ui/card';
+import { typographyVariants } from './components/ui/typography';
 
 describe('@graphology/ui design system', () => {
   it('exposes button variants for primary, secondary, outline, ghost, danger, and sizes', () => {

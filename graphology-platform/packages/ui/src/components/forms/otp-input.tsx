@@ -2,7 +2,7 @@
 
 import { cn } from '@graphology/utils';
 import * as React from 'react';
-import { Input } from '../ui/input.js';
+import { Input } from '../ui/input';
 
 export interface OtpInputProps {
   length?: number;

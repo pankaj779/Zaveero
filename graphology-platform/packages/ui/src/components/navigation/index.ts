@@ -5,4 +5,4 @@ export {
   Sidebar,
   SidebarItem,
   type NavLinkProps,
-} from './navigation.js';
+} from './navigation';

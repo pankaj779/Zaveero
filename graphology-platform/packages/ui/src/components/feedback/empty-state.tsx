@@ -1,6 +1,6 @@
 import { cn } from '@graphology/utils';
 import * as React from 'react';
-import { Button } from '../ui/button.js';
+import { Button } from '../ui/button';
 
 export interface EmptyStateProps extends React.HTMLAttributes<HTMLDivElement> {
   title: string;

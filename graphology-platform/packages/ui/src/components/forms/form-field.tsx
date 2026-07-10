@@ -1,6 +1,6 @@
 import { cn } from '@graphology/utils';
 import * as React from 'react';
-import { Label } from '../ui/label.js';
+import { Label } from '../ui/label';
 
 export interface FormFieldProps extends React.HTMLAttributes<HTMLDivElement> {
   label?: string;

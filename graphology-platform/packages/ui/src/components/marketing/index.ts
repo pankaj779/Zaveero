@@ -1,1 +1,1 @@
-export { FeatureGrid, Hero } from './hero.js';
+export { FeatureGrid, Hero } from './hero';

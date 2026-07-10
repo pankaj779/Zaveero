@@ -8,4 +8,4 @@ export {
   TableHeader,
   TableRow,
   type PaginationProps,
-} from './table.js';
+} from './table';

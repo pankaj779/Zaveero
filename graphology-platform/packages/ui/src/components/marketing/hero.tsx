@@ -1,7 +1,7 @@
 import { cn } from '@graphology/utils';
 import * as React from 'react';
-import { Button } from '../ui/button.js';
-import { Container } from '../layout/layout.js';
+import { Button } from '../ui/button';
+import { Container } from '../layout/layout';
 
 export function Hero({
   eyebrow,

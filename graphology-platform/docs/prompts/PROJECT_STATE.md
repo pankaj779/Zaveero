@@ -23,6 +23,7 @@ Backend foundation and authentication/RBAC are implemented. Ready for business m
 - Architecture Decision Records (`docs/adr/`)
 - Engineering stabilization
 - **Design system** (`@graphology/ui` tokens + component library)
+- **Public website foundation** (layout, nav, footer, homepage hero + placeholders, SEO)
 
 ## Pending Modules
 
@@ -40,11 +41,11 @@ Backend foundation and authentication/RBAC are implemented. Ready for business m
 
 ## Last Completed Step
 
-Engineering Task 04.01 — Design System
+Engineering Task 04.02 — Public Website Homepage Foundation
 
 ## Next Step
 
-Public website / marketing pages using `@graphology/ui`
+Homepage content sections (What is Graphology, Why Choose Us, etc.)
 
 ## Key References
 

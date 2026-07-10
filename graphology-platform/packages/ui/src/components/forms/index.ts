@@ -1,5 +1,5 @@
-export { FormField, type FormFieldProps } from './form-field.js';
-export { OtpInput, type OtpInputProps } from './otp-input.js';
-export { SearchInput } from './search-input.js';
-export { FileUpload, type FileUploadProps } from './file-upload.js';
-export { EmailInput, PasswordInput, PhoneInput } from './typed-inputs.js';
+export { FormField, type FormFieldProps } from './form-field';
+export { OtpInput, type OtpInputProps } from './otp-input';
+export { SearchInput } from './search-input';
+export { FileUpload, type FileUploadProps } from './file-upload';
+export { EmailInput, PasswordInput, PhoneInput } from './typed-inputs';

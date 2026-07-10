@@ -3,7 +3,7 @@
 import { cn } from '@graphology/utils';
 import { Search } from 'lucide-react';
 import * as React from 'react';
-import { Input, type InputProps } from '../ui/input.js';
+import { Input, type InputProps } from '../ui/input';
 
 export const SearchInput = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, ...props }, ref) => (

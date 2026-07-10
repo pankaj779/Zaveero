@@ -4,4 +4,4 @@ export {
   PageHeader,
   Section,
   Stack,
-} from './layout.js';
+} from './layout';
