@@ -41,7 +41,7 @@ Backend foundation and authentication/RBAC are implemented. Ready for business m
 
 ## Last Completed Step
 
-Engineering Task 04.02 — Public Website Homepage Foundation
+Engineering Task 04.03 — Premium Hero Section
 
 ## Next Step
 

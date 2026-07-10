@@ -3,16 +3,21 @@
 import { Button } from '@graphology/ui';
 import { cn } from '@graphology/utils';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useId, useState } from 'react';
-import { mainNav, siteConfig } from '../../lib/site';
+import { brandConfig } from '../../lib/brand';
+import { navigationConfig } from '../../lib/config';
+import { icons, ROUTES } from '../../lib/constants';
 
 export function SiteHeader(): React.JSX.Element {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const reduceMotion = useReducedMotion();
+  const MenuIcon = icons.menu;
+  const CloseIcon = icons.close;
+  const { primary, auth } = navigationConfig;
+  const brandLabel = brandConfig.logo.text;
 
   useEffect(() => {
     const onScroll = (): void => {
@@ -61,15 +66,15 @@ export function SiteHeader(): React.JSX.Element {
     >
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 tablet:px-6 desktop:px-8">
         <Link
-          href="/"
+          href={ROUTES.home}
           className="text-sm font-semibold tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          aria-label={`${siteConfig.name} home`}
+          aria-label={`${brandLabel} home`}
         >
-          {siteConfig.shortName}
+          {brandLabel}
         </Link>
 
         <nav className="hidden items-center gap-8 laptop:flex" aria-label="Primary">
-          {mainNav.map((item) => (
+          {primary.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -82,10 +87,10 @@ export function SiteHeader(): React.JSX.Element {
 
         <div className="hidden items-center gap-2 laptop:flex">
           <Button variant="ghost" size="md" asChild>
-            <Link href="#">Login</Link>
+            <Link href={auth.login.href}>{auth.login.label}</Link>
           </Button>
           <Button variant="primary" size="md" asChild>
-            <Link href="#">Join Now</Link>
+            <Link href={auth.cta.href}>{auth.cta.label}</Link>
           </Button>
         </div>
 
@@ -99,7 +104,7 @@ export function SiteHeader(): React.JSX.Element {
           aria-controls={panelId}
           onClick={toggleMenu}
         >
-          {open ? <X aria-hidden /> : <Menu aria-hidden />}
+          {open ? <CloseIcon aria-hidden /> : <MenuIcon aria-hidden />}
         </Button>
       </div>
 
@@ -130,7 +135,7 @@ export function SiteHeader(): React.JSX.Element {
               transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
             >
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold">{siteConfig.shortName}</span>
+                <span className="text-sm font-semibold">{brandLabel}</span>
                 <Button
                   type="button"
                   variant="ghost"
@@ -138,11 +143,11 @@ export function SiteHeader(): React.JSX.Element {
                   aria-label="Close menu"
                   onClick={closeMenu}
                 >
-                  <X aria-hidden />
+                  <CloseIcon aria-hidden />
                 </Button>
               </div>
               <ul className="flex flex-col gap-1">
-                {mainNav.map((item) => (
+                {primary.map((item) => (
                   <li key={item.href}>
                     <Link
                       href={item.href}
@@ -156,13 +161,13 @@ export function SiteHeader(): React.JSX.Element {
               </ul>
               <div className="mt-auto flex flex-col gap-2">
                 <Button variant="outline" size="md" asChild>
-                  <Link href="#" onClick={closeMenu}>
-                    Login
+                  <Link href={auth.login.href} onClick={closeMenu}>
+                    {auth.login.label}
                   </Link>
                 </Button>
                 <Button variant="primary" size="md" asChild>
-                  <Link href="#" onClick={closeMenu}>
-                    Join Now
+                  <Link href={auth.cta.href} onClick={closeMenu}>
+                    {auth.cta.label}
                   </Link>
                 </Button>
               </div>

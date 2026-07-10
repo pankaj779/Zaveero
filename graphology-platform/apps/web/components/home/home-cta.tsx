@@ -1,7 +1,11 @@
 import { Button, Container } from '@graphology/ui';
 import Link from 'next/link';
+import { navigationConfig } from '../../lib/config';
+import { ROUTES } from '../../lib/constants';
 
 export function HomeCta(): React.JSX.Element {
+  const { auth } = navigationConfig;
+
   return (
     <section className="border-t border-border py-16 laptop:py-20" aria-labelledby="cta-heading">
       <Container>
@@ -20,7 +24,7 @@ export function HomeCta(): React.JSX.Element {
               className="bg-background text-foreground hover:bg-background/90"
               asChild
             >
-              <Link href="#">Join Now</Link>
+              <Link href={auth.cta.href}>{auth.cta.label}</Link>
             </Button>
             <Button
               variant="outline"
@@ -28,7 +32,7 @@ export function HomeCta(): React.JSX.Element {
               className="border-primary-foreground/30 bg-transparent text-primary-foreground hover:bg-primary-foreground/10"
               asChild
             >
-              <Link href="/#courses">Explore Courses</Link>
+              <Link href={ROUTES.courses}>Explore Courses</Link>
             </Button>
           </div>
         </div>

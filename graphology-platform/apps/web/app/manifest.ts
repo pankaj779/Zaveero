@@ -1,18 +1,19 @@
 import type { MetadataRoute } from 'next';
-import { siteConfig } from '../lib/site';
+import { brandConfig } from '../lib/brand';
+import { themeConfig } from '../lib/theme';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: siteConfig.name,
-    short_name: siteConfig.shortName,
-    description: siteConfig.description,
+    name: brandConfig.company.name,
+    short_name: brandConfig.product.shortName,
+    description: brandConfig.description,
     start_url: '/',
     display: 'standalone',
-    background_color: '#f8fafc',
-    theme_color: '#0f172a',
+    background_color: themeConfig.lightMode.background,
+    theme_color: themeConfig.lightMode.foreground,
     icons: [
       {
-        src: '/icon.svg',
+        src: brandConfig.logo.src,
         sizes: 'any',
         type: 'image/svg+xml',
       },

@@ -1,10 +1,10 @@
 import type { MetadataRoute } from 'next';
-import { siteConfig } from '../lib/site';
+import { brandConfig } from '../lib/brand';
 
 export default function sitemap(): MetadataRoute.Sitemap {
   return [
     {
-      url: siteConfig.url,
+      url: brandConfig.website,
       lastModified: new Date(),
       changeFrequency: 'weekly',
       priority: 1,
