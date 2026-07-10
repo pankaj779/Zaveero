@@ -7,3 +7,7 @@ export { TokenExpiredException } from './token-expired.exception';
 export { TokenInvalidException } from './token-invalid.exception';
 export { OrganizationNotFoundException } from './organization-not-found.exception';
 export { DefaultRoleNotFoundException } from './default-role-not-found.exception';
+export { UnauthenticatedException } from './unauthenticated.exception';
+export { InsufficientPermissionsException } from './insufficient-permissions.exception';
+export { InsufficientRolesException } from './insufficient-roles.exception';
+export { OrganizationMembershipRequiredException } from './organization-membership-required.exception';

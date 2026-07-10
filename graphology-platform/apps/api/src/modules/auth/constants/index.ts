@@ -1,4 +1,8 @@
-export { AUTH_REPOSITORY, USER_REPOSITORY } from './injection-tokens';
+export {
+  AUTH_REPOSITORY,
+  USER_REPOSITORY,
+  AUTHORIZATION_REPOSITORY,
+} from './injection-tokens';
 export {
   AUTH_TOKEN_TYPES,
   AUTH_COOKIE_NAMES,

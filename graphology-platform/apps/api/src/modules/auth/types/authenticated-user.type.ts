@@ -1,10 +1,14 @@
-import type { AuthRoleName } from '../constants/auth.constants';
+import type { AuthPermissionName, AuthRoleName } from '../constants/auth.constants';
 
 /**
- * Shape of the authenticated user attached to requests in future auth tasks.
+ * Authenticated principal attached to the request by JwtAuthGuard.
  */
 export interface AuthenticatedUser {
   id: string;
   email: string;
   roles: AuthRoleName[];
+  permissions: AuthPermissionName[];
+  organizationIds: string[];
 }
+
+export type AuthenticatedUserProperty = keyof AuthenticatedUser;

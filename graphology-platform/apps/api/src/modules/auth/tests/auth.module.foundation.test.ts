@@ -4,20 +4,26 @@ import {
   AUTH_EXPIRATION_NAMES,
   AUTH_PERMISSIONS,
   AUTH_REPOSITORY,
+  AUTHORIZATION_REPOSITORY,
   AUTH_ROLES,
   AUTH_TOKEN_TYPES,
   USER_REPOSITORY,
 } from '../constants';
 import { AuthMapper } from '../mappers/auth.mapper';
 import { PrismaAuthRepository } from '../repositories/prisma-auth.repository';
+import { PrismaAuthorizationRepository } from '../repositories/prisma-authorization.repository';
 import { PrismaUserRepository } from '../repositories/prisma-user.repository';
 import {
   AccountDisabledException,
   EmailAlreadyExistsException,
   EmailNotVerifiedException,
+  InsufficientPermissionsException,
+  InsufficientRolesException,
   InvalidCredentialsException,
+  OrganizationMembershipRequiredException,
   TokenExpiredException,
   TokenInvalidException,
+  UnauthenticatedException,
 } from '../exceptions';
 import { RegisterDto } from '../dto/register.dto';
 import { LoginDto } from '../dto/login.dto';
@@ -32,11 +38,13 @@ import { JwtStrategy } from '../strategies/jwt.strategy';
 import { RefreshStrategy } from '../strategies/refresh.strategy';
 import { GoogleOAuthStrategy } from '../strategies/google-oauth.strategy';
 import { ROLES_KEY, PERMISSIONS_KEY } from '../decorators';
+import { PermissionLookupService } from '../services/permission-lookup.service';
 
 describe('auth module foundation', () => {
   it('exposes injection tokens for repositories', () => {
     expect(AUTH_REPOSITORY).toBeTypeOf('symbol');
     expect(USER_REPOSITORY).toBeTypeOf('symbol');
+    expect(AUTHORIZATION_REPOSITORY).toBeTypeOf('symbol');
   });
 
   it('defines auth constants for tokens, cookies, roles, and permissions', () => {
@@ -53,9 +61,11 @@ describe('auth module foundation', () => {
     const prisma = {} as never;
     const authRepo = new PrismaAuthRepository(prisma);
     const userRepo = new PrismaUserRepository(prisma);
+    const authorizationRepo = new PrismaAuthorizationRepository(prisma);
 
     expect(authRepo.marker).toBe('auth-repository');
     expect(userRepo.marker).toBe('user-repository');
+    expect(authorizationRepo.marker).toBe('authorization-repository');
   });
 
   it('defines custom auth exceptions without throwing them', () => {
@@ -65,6 +75,10 @@ describe('auth module foundation', () => {
     expect(new EmailNotVerifiedException()).toBeInstanceOf(Error);
     expect(new TokenExpiredException()).toBeInstanceOf(Error);
     expect(new TokenInvalidException()).toBeInstanceOf(Error);
+    expect(new UnauthenticatedException()).toBeInstanceOf(Error);
+    expect(new InsufficientPermissionsException()).toBeInstanceOf(Error);
+    expect(new InsufficientRolesException()).toBeInstanceOf(Error);
+    expect(new OrganizationMembershipRequiredException()).toBeInstanceOf(Error);
   });
 
   it('exposes DTO placeholder classes', () => {
@@ -76,10 +90,11 @@ describe('auth module foundation', () => {
     expect(RefreshTokenDto).toBeTypeOf('function');
   });
 
-  it('provides guard and strategy placeholders', () => {
-    expect(new JwtAuthGuard().canActivate({} as never)).toBe(false);
-    expect(new RolesGuard().canActivate({} as never)).toBe(false);
-    expect(new PermissionsGuard().canActivate({} as never)).toBe(false);
+  it('provides guard classes and strategy placeholders', () => {
+    expect(JwtAuthGuard).toBeTypeOf('function');
+    expect(RolesGuard).toBeTypeOf('function');
+    expect(PermissionsGuard).toBeTypeOf('function');
+    expect(PermissionLookupService).toBeTypeOf('function');
     expect(new JwtStrategy().name).toBe('jwt');
     expect(new RefreshStrategy().name).toBe('jwt-refresh');
     expect(new GoogleOAuthStrategy().name).toBe('google');
@@ -100,6 +115,8 @@ describe('auth module foundation', () => {
       id: 'user-1',
       email: 'ada@example.com',
       roles: [AUTH_ROLES.admin],
+      permissions: [],
+      organizationIds: [],
     });
   });
 });

@@ -4,7 +4,7 @@ import type { AuthPermissionName } from '../constants/auth.constants';
 export const PERMISSIONS_KEY = 'permissions';
 
 /**
- * Placeholder permissions decorator for route-level authorization metadata.
+ * Declares required permissions for a route. Matching is AND across listed permissions.
  */
 export const Permissions = (
   ...permissions: AuthPermissionName[]

@@ -14,3 +14,7 @@ export type {
   CompletePasswordResetInput,
 } from './auth-repository.interface';
 export type { UserRepository } from './user-repository.interface';
+export type {
+  AuthorizationRepository,
+  UserAuthorizationContext,
+} from './authorization-repository.interface';
