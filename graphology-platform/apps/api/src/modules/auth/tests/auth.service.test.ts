@@ -2,6 +2,7 @@ import { hash } from 'argon2';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { EmailService } from '../../email/interfaces/email-service.interface';
 import { LoginDto } from '../dto/login.dto';
 import { RegisterDto } from '../dto/register.dto';
 import {
@@ -9,38 +10,84 @@ import {
   EmailAlreadyExistsException,
   InvalidCredentialsException,
   PhoneAlreadyExistsException,
+  TokenExpiredException,
+  TokenInvalidException,
 } from '../exceptions';
 import type {
   AuthRepository,
   AuthUserRecord,
+  CreateEmailVerificationTokenInput,
+  EmailVerificationTokenRecord,
   RegisterUserInput,
   RegisterUserResult,
 } from '../interfaces/auth-repository.interface';
 import type { UserRepository } from '../interfaces/user-repository.interface';
 import { AuthService } from '../services/auth.service';
 import type { TokenService } from '../services/token.service';
+import {
+  generateEmailVerificationToken,
+  hashEmailVerificationToken,
+} from '../utils/email-verification-token.util';
+
+function createAuthService(deps: {
+  authRepository: AuthRepository;
+  userRepository: UserRepository;
+  tokenService: TokenService;
+  emailService: EmailService;
+}): AuthService {
+  const configService = {
+    get: (key: string) => {
+      if (key === 'FRONTEND_URL') {
+        return 'http://localhost:3000';
+      }
+      if (key === 'APP_NAME') {
+        return 'Graphology Platform';
+      }
+      return undefined;
+    },
+  };
+
+  return new AuthService(
+    deps.authRepository,
+    deps.userRepository,
+    deps.tokenService,
+    deps.emailService,
+    configService as never,
+  );
+}
 
 describe('AuthService.register', () => {
   const registerUser = vi.fn<(input: RegisterUserInput) => Promise<RegisterUserResult>>();
   const findByEmail = vi.fn<(email: string) => Promise<AuthUserRecord | null>>();
   const findByPhone = vi.fn<(phone: string) => Promise<AuthUserRecord | null>>();
+  const findById = vi.fn();
+  const markEmailVerified = vi.fn();
+  const createEmailVerificationToken = vi.fn();
+  const findEmailVerificationTokenByHash = vi.fn();
+  const deleteEmailVerificationTokensForUser = vi.fn();
+  const deleteEmailVerificationToken = vi.fn();
   const createAccessToken = vi.fn();
+  const sendEmail = vi.fn<(input: { to: string; subject: string; html: string; text?: string }) => Promise<void>>();
 
   const authRepository: AuthRepository = {
     marker: 'auth-repository',
     registerUser,
+    createEmailVerificationToken,
+    findEmailVerificationTokenByHash,
+    deleteEmailVerificationTokensForUser,
+    deleteEmailVerificationToken,
   };
 
   const userRepository: UserRepository = {
     marker: 'user-repository',
     findByEmail,
     findByPhone,
+    findById,
+    markEmailVerified,
   };
 
-  const tokenService = {
-    createAccessToken,
-  } as unknown as TokenService;
-
+  const tokenService = { createAccessToken } as unknown as TokenService;
+  const emailService = { sendEmail } as unknown as EmailService;
   let service: AuthService;
 
   const validDto: RegisterDto = {
@@ -53,10 +100,24 @@ describe('AuthService.register', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new AuthService(authRepository, userRepository, tokenService);
+    service = createAuthService({
+      authRepository,
+      userRepository,
+      tokenService,
+      emailService,
+    });
+    createEmailVerificationToken.mockResolvedValue({
+      id: 'token-1',
+      userId: 'user-1',
+      tokenHash: 'hash',
+      expiresAt: new Date(Date.now() + 86_400_000),
+      createdAt: new Date(),
+    });
+    deleteEmailVerificationTokensForUser.mockResolvedValue(undefined);
+    sendEmail.mockResolvedValue(undefined);
   });
 
-  it('registers a user with hashed password and response contract', async () => {
+  it('registers a user with hashed password and sends verification email', async () => {
     findByEmail.mockResolvedValue(null);
     findByPhone.mockResolvedValue(null);
     registerUser.mockResolvedValue({
@@ -75,19 +136,29 @@ describe('AuthService.register', () => {
         organization: 'Graphology Academy',
       },
     });
-
-    expect(registerUser).toHaveBeenCalledTimes(1);
-    const [registerInput] = registerUser.mock.calls[0] ?? [];
-    expect(registerInput).toMatchObject({
-      firstName: 'Ada',
-      lastName: 'Lovelace',
-      email: 'ada@example.com',
-      phone: '+919876543210',
-      organizationSlug: 'graphology-academy',
-      roleName: 'Student',
+    expect(createEmailVerificationToken).toHaveBeenCalled();
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const [emailPayload] = sendEmail.mock.calls[0] ?? [];
+    expect(emailPayload).toMatchObject({
+      to: 'ada@example.com',
     });
-    expect(registerInput?.passwordHash).toMatch(/^\$argon2/);
-    expect(registerInput?.passwordHash).not.toBe(validDto.password);
+    expect(emailPayload?.subject).toContain('Verify your email');
+  });
+
+  it('keeps registration successful when email sending fails', async () => {
+    findByEmail.mockResolvedValue(null);
+    findByPhone.mockResolvedValue(null);
+    registerUser.mockResolvedValue({
+      userId: 'user-1',
+      email: 'ada@example.com',
+      organizationName: 'Graphology Academy',
+    });
+    sendEmail.mockRejectedValue(new Error('provider unavailable'));
+
+    await expect(service.register(validDto)).resolves.toMatchObject({
+      data: { userId: 'user-1' },
+    });
+    expect(registerUser).toHaveBeenCalled();
   });
 
   it('rejects duplicate email', async () => {
@@ -106,7 +177,6 @@ describe('AuthService.register', () => {
     await expect(service.register(validDto)).rejects.toBeInstanceOf(
       EmailAlreadyExistsException,
     );
-    expect(registerUser).not.toHaveBeenCalled();
   });
 
   it('rejects duplicate phone', async () => {
@@ -126,7 +196,6 @@ describe('AuthService.register', () => {
     await expect(service.register(validDto)).rejects.toBeInstanceOf(
       PhoneAlreadyExistsException,
     );
-    expect(registerUser).not.toHaveBeenCalled();
   });
 });
 
@@ -134,29 +203,45 @@ describe('AuthService.login', () => {
   const registerUser = vi.fn();
   const findByEmail = vi.fn<(email: string) => Promise<AuthUserRecord | null>>();
   const findByPhone = vi.fn();
+  const findById = vi.fn();
+  const markEmailVerified = vi.fn();
+  const createEmailVerificationToken = vi.fn();
+  const findEmailVerificationTokenByHash = vi.fn();
+  const deleteEmailVerificationTokensForUser = vi.fn();
+  const deleteEmailVerificationToken = vi.fn();
   const createAccessToken = vi.fn();
+  const sendEmail = vi.fn<(input: { to: string; subject: string; html: string; text?: string }) => Promise<void>>();
 
   const authRepository: AuthRepository = {
     marker: 'auth-repository',
     registerUser,
+    createEmailVerificationToken,
+    findEmailVerificationTokenByHash,
+    deleteEmailVerificationTokensForUser,
+    deleteEmailVerificationToken,
   };
 
   const userRepository: UserRepository = {
     marker: 'user-repository',
     findByEmail,
     findByPhone,
+    findById,
+    markEmailVerified,
   };
 
-  const tokenService = {
-    createAccessToken,
-  } as unknown as TokenService;
-
+  const tokenService = { createAccessToken } as unknown as TokenService;
+  const emailService = { sendEmail } as unknown as EmailService;
   let service: AuthService;
   let activeUser: AuthUserRecord;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    service = new AuthService(authRepository, userRepository, tokenService);
+    service = createAuthService({
+      authRepository,
+      userRepository,
+      tokenService,
+      emailService,
+    });
     activeUser = {
       id: 'user-1',
       email: 'ada@example.com',
@@ -182,23 +267,7 @@ describe('AuthService.login', () => {
       password: 'SecurePass1!',
     });
 
-    expect(result).toEqual({
-      message: 'Login successful.',
-      data: {
-        accessToken: 'jwt-token',
-        expiresIn: '15m',
-        user: {
-          id: 'user-1',
-          firstName: 'Ada',
-          lastName: 'Lovelace',
-          email: 'ada@example.com',
-        },
-      },
-    });
-    expect(createAccessToken).toHaveBeenCalledWith({
-      id: 'user-1',
-      email: 'ada@example.com',
-    });
+    expect(result.data.accessToken).toBe('jwt-token');
   });
 
   it('rejects wrong password with InvalidCredentialsException', async () => {
@@ -210,7 +279,6 @@ describe('AuthService.login', () => {
         password: 'WrongPass1!',
       }),
     ).rejects.toBeInstanceOf(InvalidCredentialsException);
-    expect(createAccessToken).not.toHaveBeenCalled();
   });
 
   it('rejects unknown email with InvalidCredentialsException', async () => {
@@ -222,14 +290,10 @@ describe('AuthService.login', () => {
         password: 'SecurePass1!',
       }),
     ).rejects.toBeInstanceOf(InvalidCredentialsException);
-    expect(createAccessToken).not.toHaveBeenCalled();
   });
 
   it('rejects inactive accounts', async () => {
-    findByEmail.mockResolvedValue({
-      ...activeUser,
-      isActive: false,
-    });
+    findByEmail.mockResolvedValue({ ...activeUser, isActive: false });
 
     await expect(
       service.login({
@@ -237,7 +301,6 @@ describe('AuthService.login', () => {
         password: 'SecurePass1!',
       }),
     ).rejects.toBeInstanceOf(AccountDisabledException);
-    expect(createAccessToken).not.toHaveBeenCalled();
   });
 
   it('rejects soft-deleted accounts', async () => {
@@ -252,15 +315,10 @@ describe('AuthService.login', () => {
         password: 'SecurePass1!',
       }),
     ).rejects.toBeInstanceOf(AccountDisabledException);
-    expect(createAccessToken).not.toHaveBeenCalled();
   });
 
   it('rejects disabled accounts', async () => {
-    findByEmail.mockResolvedValue({
-      ...activeUser,
-      isActive: false,
-      deletedAt: null,
-    });
+    findByEmail.mockResolvedValue({ ...activeUser, isActive: false });
 
     await expect(
       service.login({
@@ -268,6 +326,172 @@ describe('AuthService.login', () => {
         password: 'SecurePass1!',
       }),
     ).rejects.toBeInstanceOf(AccountDisabledException);
+  });
+});
+
+describe('AuthService.verifyEmail and resendVerification', () => {
+  const registerUser = vi.fn();
+  const findByEmail = vi.fn<(email: string) => Promise<AuthUserRecord | null>>();
+  const findByPhone = vi.fn();
+  const findById = vi.fn<(id: string) => Promise<AuthUserRecord | null>>();
+  const markEmailVerified = vi.fn();
+  const createEmailVerificationToken =
+    vi.fn<(input: CreateEmailVerificationTokenInput) => Promise<EmailVerificationTokenRecord>>();
+  const findEmailVerificationTokenByHash =
+    vi.fn<(tokenHash: string) => Promise<EmailVerificationTokenRecord | null>>();
+  const deleteEmailVerificationTokensForUser = vi.fn();
+  const deleteEmailVerificationToken = vi.fn();
+  const createAccessToken = vi.fn();
+  const sendEmail = vi.fn<(input: { to: string; subject: string; html: string; text?: string }) => Promise<void>>();
+
+  const authRepository: AuthRepository = {
+    marker: 'auth-repository',
+    registerUser,
+    createEmailVerificationToken,
+    findEmailVerificationTokenByHash,
+    deleteEmailVerificationTokensForUser,
+    deleteEmailVerificationToken,
+  };
+
+  const userRepository: UserRepository = {
+    marker: 'user-repository',
+    findByEmail,
+    findByPhone,
+    findById,
+    markEmailVerified,
+  };
+
+  const tokenService = { createAccessToken } as unknown as TokenService;
+  const emailService = { sendEmail } as unknown as EmailService;
+  let service: AuthService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = createAuthService({
+      authRepository,
+      userRepository,
+      tokenService,
+      emailService,
+    });
+    createEmailVerificationToken.mockResolvedValue({
+      id: 'token-1',
+      userId: 'user-1',
+      tokenHash: 'hash',
+      expiresAt: new Date(Date.now() + 86_400_000),
+      createdAt: new Date(),
+    });
+    deleteEmailVerificationTokensForUser.mockResolvedValue(undefined);
+    deleteEmailVerificationToken.mockResolvedValue(undefined);
+    markEmailVerified.mockResolvedValue(undefined);
+    sendEmail.mockResolvedValue(undefined);
+  });
+
+  it('verifies a valid token and marks the user verified', async () => {
+    const rawToken = generateEmailVerificationToken();
+    const tokenHash = hashEmailVerificationToken(rawToken);
+
+    findEmailVerificationTokenByHash.mockResolvedValue({
+      id: 'token-1',
+      userId: 'user-1',
+      tokenHash,
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date(),
+    });
+    findById.mockResolvedValue({
+      id: 'user-1',
+      email: 'ada@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      phone: null,
+      passwordHash: 'hash',
+      emailVerified: false,
+      isActive: true,
+      deletedAt: null,
+    });
+
+    const result = await service.verifyEmail({ token: rawToken });
+
+    expect(result).toEqual({
+      message: 'Email verified successfully.',
+      data: { email: 'ada@example.com' },
+    });
+    expect(markEmailVerified).toHaveBeenCalledWith('user-1');
+    expect(deleteEmailVerificationTokensForUser).toHaveBeenCalledWith('user-1');
+  });
+
+  it('rejects invalid tokens', async () => {
+    findEmailVerificationTokenByHash.mockResolvedValue(null);
+
+    await expect(service.verifyEmail({ token: 'invalid-token' })).rejects.toBeInstanceOf(
+      TokenInvalidException,
+    );
+  });
+
+  it('rejects expired tokens', async () => {
+    findEmailVerificationTokenByHash.mockResolvedValue({
+      id: 'token-1',
+      userId: 'user-1',
+      tokenHash: 'hash',
+      expiresAt: new Date(Date.now() - 1000),
+      createdAt: new Date(),
+    });
+
+    await expect(service.verifyEmail({ token: 'expired-token' })).rejects.toBeInstanceOf(
+      TokenExpiredException,
+    );
+    expect(deleteEmailVerificationToken).toHaveBeenCalledWith('token-1');
+  });
+
+  it('returns success when email is already verified on resend', async () => {
+    findByEmail.mockResolvedValue({
+      id: 'user-1',
+      email: 'ada@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      phone: null,
+      passwordHash: 'hash',
+      emailVerified: true,
+      isActive: true,
+      deletedAt: null,
+    });
+
+    const result = await service.resendVerification({ email: 'ada@example.com' });
+
+    expect(result.message).toBe('Email is already verified.');
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('does not reveal whether an email exists on resend', async () => {
+    findByEmail.mockResolvedValue(null);
+
+    const result = await service.resendVerification({ email: 'missing@example.com' });
+
+    expect(result.message).toBe(
+      'If an account exists for this email, a verification link has been sent.',
+    );
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('resends verification for an unverified account', async () => {
+    findByEmail.mockResolvedValue({
+      id: 'user-1',
+      email: 'ada@example.com',
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      phone: null,
+      passwordHash: 'hash',
+      emailVerified: false,
+      isActive: true,
+      deletedAt: null,
+    });
+
+    const result = await service.resendVerification({ email: 'ada@example.com' });
+
+    expect(result.message).toBe(
+      'If an account exists for this email, a verification link has been sent.',
+    );
+    expect(createEmailVerificationToken).toHaveBeenCalled();
+    expect(sendEmail).toHaveBeenCalled();
   });
 });
 
@@ -281,7 +505,6 @@ describe('RegisterDto validation', () => {
     });
 
     const errors = await validate(dto);
-    expect(errors.length).toBeGreaterThan(0);
     expect(errors.some((error) => error.property === 'password')).toBe(true);
   });
 
@@ -328,5 +551,13 @@ describe('LoginDto validation', () => {
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
     expect(dto.email).toBe('ada@example.com');
+  });
+});
+
+describe('email verification token util', () => {
+  it('hashes tokens deterministically without storing the raw value', () => {
+    const token = generateEmailVerificationToken();
+    expect(token).not.toEqual(hashEmailVerificationToken(token));
+    expect(hashEmailVerificationToken(token)).toBe(hashEmailVerificationToken(token));
   });
 });

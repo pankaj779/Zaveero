@@ -8,6 +8,7 @@ const validEnv = {
   DIRECT_URL: 'postgresql://graphology:graphology@localhost:5432/graphology?schema=public',
   JWT_SECRET: 'change-me-in-production',
   RESEND_API_KEY: 're_placeholder',
+  EMAIL_FROM: 'noreply@example.com',
   RAZORPAY_KEY_ID: 'rzp_placeholder',
   RAZORPAY_SECRET: 'rzp_secret_placeholder',
 };
@@ -37,6 +38,26 @@ describe('validateEnv', () => {
     });
 
     expect(config.JWT_EXPIRES_IN).toBe('30m');
+  });
+
+  it('accepts RESEND_FROM_EMAIL as an alias for EMAIL_FROM', () => {
+    const config = validateEnv({
+      ...validEnv,
+      EMAIL_FROM: undefined,
+      RESEND_FROM_EMAIL: 'alias@example.com',
+    });
+
+    expect(config.EMAIL_FROM).toBe('alias@example.com');
+  });
+
+  it('defaults FRONTEND_URL from APP_URL when omitted', () => {
+    const config = validateEnv({
+      ...validEnv,
+      APP_URL: 'http://localhost:3000',
+      FRONTEND_URL: undefined,
+    });
+
+    expect(config.FRONTEND_URL).toBe('http://localhost:3000');
   });
 
   it('fails fast when required variables are missing', () => {

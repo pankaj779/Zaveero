@@ -31,6 +31,8 @@ export const DEFAULT_ORGANIZATION = {
 
 export const DEFAULT_REGISTRATION_ROLE = AUTH_ROLES.student;
 
+export const EMAIL_VERIFICATION_EXPIRY_HOURS = 24;
+
 export type AuthRoleName = (typeof AUTH_ROLES)[keyof typeof AUTH_ROLES];
 
 export const AUTH_PERMISSIONS = {

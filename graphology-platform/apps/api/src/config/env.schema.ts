@@ -9,6 +9,7 @@ export const envSchema = z.object({
   APP_NAME: z.string().default('Graphology Platform'),
   APP_URL: z.string().url().default('http://localhost:3000'),
   API_URL: z.string().url().default('http://localhost:3001'),
+  FRONTEND_URL: z.string().url().default('http://localhost:3000'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   DATABASE_URL: nonEmptyString,
   DIRECT_URL: nonEmptyString,
@@ -18,6 +19,7 @@ export const envSchema = z.object({
   JWT_ACCESS_EXPIRATION: z.string().optional(),
   JWT_REFRESH_EXPIRATION: z.string().default('7d'),
   RESEND_API_KEY: nonEmptyString,
+  EMAIL_FROM: z.string().email(),
   RESEND_FROM_EMAIL: z.string().email().optional(),
   RAZORPAY_KEY_ID: nonEmptyString,
   RAZORPAY_SECRET: nonEmptyString,
@@ -35,6 +37,8 @@ export function validateEnv(config: Record<string, unknown>): EnvConfig {
     ...config,
     RAZORPAY_SECRET: config.RAZORPAY_SECRET ?? config.RAZORPAY_KEY_SECRET,
     JWT_EXPIRES_IN: config.JWT_EXPIRES_IN ?? config.JWT_ACCESS_EXPIRATION,
+    FRONTEND_URL: config.FRONTEND_URL ?? config.APP_URL ?? 'http://localhost:3000',
+    EMAIL_FROM: config.EMAIL_FROM ?? config.RESEND_FROM_EMAIL,
   };
 
   const parsed = envSchema.safeParse(normalized);

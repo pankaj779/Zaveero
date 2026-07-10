@@ -14,6 +14,8 @@ export default (): EnvConfig => {
     APP_NAME: process.env.APP_NAME ?? 'Graphology Platform',
     APP_URL: process.env.APP_URL ?? 'http://localhost:3000',
     API_URL: process.env.API_URL ?? 'http://localhost:3001',
+    FRONTEND_URL:
+      process.env.FRONTEND_URL ?? process.env.APP_URL ?? 'http://localhost:3000',
     CORS_ORIGIN: process.env.CORS_ORIGIN ?? 'http://localhost:3000',
     DATABASE_URL: process.env.DATABASE_URL ?? '',
     DIRECT_URL: process.env.DIRECT_URL ?? '',
@@ -24,6 +26,8 @@ export default (): EnvConfig => {
     JWT_ACCESS_EXPIRATION: process.env.JWT_ACCESS_EXPIRATION,
     JWT_REFRESH_EXPIRATION: process.env.JWT_REFRESH_EXPIRATION ?? '7d',
     RESEND_API_KEY: process.env.RESEND_API_KEY ?? '',
+    EMAIL_FROM:
+      process.env.EMAIL_FROM ?? process.env.RESEND_FROM_EMAIL ?? 'noreply@example.com',
     RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
     RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID ?? '',
     RAZORPAY_SECRET: process.env.RAZORPAY_SECRET ?? process.env.RAZORPAY_KEY_SECRET ?? '',

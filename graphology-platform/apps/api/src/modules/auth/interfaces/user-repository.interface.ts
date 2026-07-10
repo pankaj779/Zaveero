@@ -10,6 +10,10 @@ export interface UserRepository {
   findByEmail(email: string): Promise<AuthUserRecord | null>;
 
   findByPhone(phone: string): Promise<AuthUserRecord | null>;
+
+  findById(id: string): Promise<AuthUserRecord | null>;
+
+  markEmailVerified(userId: string): Promise<void>;
 }
 
 export type { AuthUserRecord };

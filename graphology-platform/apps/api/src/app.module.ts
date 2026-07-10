@@ -5,9 +5,10 @@ import { RequestLoggingMiddleware } from './common/middleware/request-logging.mi
 import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { EmailModule } from './modules/email/email.module';
 
 @Module({
-  imports: [AppConfigModule, DatabaseModule, HealthModule, AuthModule],
+  imports: [AppConfigModule, DatabaseModule, EmailModule, HealthModule, AuthModule],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

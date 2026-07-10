@@ -9,6 +9,8 @@ import {
 } from '../exceptions';
 import type {
   AuthRepository,
+  CreateEmailVerificationTokenInput,
+  EmailVerificationTokenRecord,
   RegisterUserInput,
   RegisterUserResult,
 } from '../interfaces/auth-repository.interface';
@@ -83,6 +85,52 @@ export class PrismaAuthRepository implements AuthRepository {
       this.rethrowUniqueConstraint(error);
       throw error;
     }
+  }
+
+  async createEmailVerificationToken(
+    input: CreateEmailVerificationTokenInput,
+  ): Promise<EmailVerificationTokenRecord> {
+    return this.prisma.emailVerificationToken.create({
+      data: {
+        userId: input.userId,
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt,
+      },
+      select: {
+        id: true,
+        userId: true,
+        tokenHash: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async findEmailVerificationTokenByHash(
+    tokenHash: string,
+  ): Promise<EmailVerificationTokenRecord | null> {
+    return this.prisma.emailVerificationToken.findUnique({
+      where: { tokenHash },
+      select: {
+        id: true,
+        userId: true,
+        tokenHash: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async deleteEmailVerificationTokensForUser(userId: string): Promise<void> {
+    await this.prisma.emailVerificationToken.deleteMany({
+      where: { userId },
+    });
+  }
+
+  async deleteEmailVerificationToken(id: string): Promise<void> {
+    await this.prisma.emailVerificationToken.delete({
+      where: { id },
+    });
   }
 
   private rethrowUniqueConstraint(error: unknown): void {

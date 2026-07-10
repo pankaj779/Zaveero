@@ -7,6 +7,7 @@ export {
   AUTH_PERMISSIONS,
   DEFAULT_ORGANIZATION,
   DEFAULT_REGISTRATION_ROLE,
+  EMAIL_VERIFICATION_EXPIRY_HOURS,
   type AuthTokenType,
   type AuthRoleName,
   type AuthPermissionName,

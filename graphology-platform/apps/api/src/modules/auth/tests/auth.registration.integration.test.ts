@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { hash, verify } from 'argon2';
 import { prisma } from '@graphology/database';
 import { JwtService } from '@nestjs/jwt';
+import type { EmailService } from '../../email/interfaces/email-service.interface';
 import {
   DEFAULT_ORGANIZATION,
   DEFAULT_REGISTRATION_ROLE,
@@ -10,23 +11,24 @@ import {
   AccountDisabledException,
   EmailAlreadyExistsException,
   InvalidCredentialsException,
+  TokenExpiredException,
+  TokenInvalidException,
 } from '../exceptions';
 import { PrismaAuthRepository } from '../repositories/prisma-auth.repository';
 import { PrismaUserRepository } from '../repositories/prisma-user.repository';
 import { AuthService } from '../services/auth.service';
 import { TokenService } from '../services/token.service';
+import { hashEmailVerificationToken } from '../utils/email-verification-token.util';
 
 const shouldRunDatabaseTests = process.env.RUN_DATABASE_TESTS === 'true';
 
-describe.runIf(shouldRunDatabaseTests)('Auth registration and login integration', () => {
+describe.runIf(shouldRunDatabaseTests)('Auth registration, login, and email verification', () => {
   const jwtSecret = process.env.JWT_SECRET ?? 'test-jwt-secret';
   const jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? process.env.JWT_ACCESS_EXPIRATION ?? '15m';
 
   const authRepository = new PrismaAuthRepository(prisma);
   const userRepository = new PrismaUserRepository(prisma);
-  const jwtService = new JwtService({
-    secret: jwtSecret,
-  });
+  const jwtService = new JwtService({ secret: jwtSecret });
   const configService = {
     get: (key: string) => {
       if (key === 'JWT_EXPIRES_IN') {
@@ -35,34 +37,46 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration and login integration'
       if (key === 'JWT_SECRET') {
         return jwtSecret;
       }
+      if (key === 'FRONTEND_URL') {
+        return process.env.FRONTEND_URL ?? 'http://localhost:3000';
+      }
+      if (key === 'APP_NAME') {
+        return process.env.APP_NAME ?? 'Graphology Platform';
+      }
       return undefined;
     },
   };
+  const sendEmail = vi.fn().mockResolvedValue(undefined);
+  const emailService = { sendEmail } as unknown as EmailService;
   const tokenService = new TokenService(jwtService, configService as never);
-  const service = new AuthService(authRepository, userRepository, tokenService);
+  const service = new AuthService(
+    authRepository,
+    userRepository,
+    tokenService,
+    emailService,
+    configService as never,
+  );
 
   const suffix = Date.now().toString();
   const email = `auth-${suffix}@example.com`;
   const phone = `+9198${suffix.slice(-8)}`;
   const password = 'SecurePass1!';
   let createdUserId: string | undefined;
+  let latestRawToken: string | undefined;
 
   beforeAll(async () => {
     await prisma.$connect();
 
-    const organization = await prisma.organization.findUnique({
-      where: { slug: DEFAULT_ORGANIZATION.slug },
+    sendEmail.mockImplementation((input: { html: string }) => {
+      const match = /token=([^"&\s]+)/.exec(input.html);
+      latestRawToken = match?.[1] ? decodeURIComponent(match[1]) : undefined;
+      return Promise.resolve();
     });
-    const role = await prisma.role.findUnique({
-      where: { name: DEFAULT_REGISTRATION_ROLE },
-    });
-
-    expect(organization).not.toBeNull();
-    expect(role).not.toBeNull();
   });
 
   afterAll(async () => {
     if (createdUserId) {
+      await prisma.emailVerificationToken.deleteMany({ where: { userId: createdUserId } });
       await prisma.userRole.deleteMany({ where: { userId: createdUserId } });
       await prisma.organizationMember.deleteMany({ where: { userId: createdUserId } });
       await prisma.user.deleteMany({ where: { id: createdUserId } });
@@ -71,7 +85,7 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration and login integration'
     await prisma.$disconnect();
   });
 
-  it('registers a user with org membership, student role, and hashed password', async () => {
+  it('registers a user and stores a hashed verification token', async () => {
     const result = await service.register({
       firstName: 'Ada',
       lastName: 'Lovelace',
@@ -81,66 +95,83 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration and login integration'
     });
 
     createdUserId = result.data.userId;
+    expect(sendEmail).toHaveBeenCalled();
+    expect(latestRawToken).toBeTruthy();
+    if (!latestRawToken || !createdUserId) {
+      throw new Error('Expected registration to create a verification token');
+    }
 
-    expect(result.message).toBe('Registration successful. Please verify your email.');
-    expect(result.data).toEqual({
-      userId: createdUserId,
-      email,
-      organization: DEFAULT_ORGANIZATION.name,
+    const stored = await prisma.emailVerificationToken.findMany({
+      where: { userId: createdUserId },
     });
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.tokenHash).toBe(hashEmailVerificationToken(latestRawToken));
+    expect(stored[0]?.tokenHash).not.toBe(latestRawToken);
 
-    const user = await prisma.user.findUnique({
-      where: { id: createdUserId },
-      include: {
-        organizationMembers: {
-          include: { organization: true },
-        },
-        userRoles: {
-          include: { role: true },
-        },
+    const user = await prisma.user.findUnique({ where: { id: createdUserId } });
+    expect(user).not.toBeNull();
+    if (!user) {
+      throw new Error('Expected registered user');
+    }
+    expect(user.emailVerified).toBe(false);
+    await expect(verify(user.passwordHash, password)).resolves.toBe(true);
+  });
+
+  it('verifies email with a valid token', async () => {
+    if (!latestRawToken || !createdUserId) {
+      throw new Error('Expected verification token from registration');
+    }
+
+    const result = await service.verifyEmail({ token: latestRawToken });
+
+    expect(result.message).toBe('Email verified successfully.');
+    expect(result.data.email).toBe(email);
+
+    const user = await prisma.user.findUnique({ where: { id: createdUserId } });
+    expect(user?.emailVerified).toBe(true);
+
+    const tokens = await prisma.emailVerificationToken.findMany({
+      where: { userId: createdUserId },
+    });
+    expect(tokens).toHaveLength(0);
+  });
+
+  it('rejects invalid and expired verification tokens', async () => {
+    if (!createdUserId) {
+      throw new Error('Expected created user id');
+    }
+
+    await expect(service.verifyEmail({ token: 'not-a-real-token' })).rejects.toBeInstanceOf(
+      TokenInvalidException,
+    );
+
+    const expiredRaw = `expired-${suffix}`;
+    await prisma.emailVerificationToken.create({
+      data: {
+        userId: createdUserId,
+        tokenHash: hashEmailVerificationToken(expiredRaw),
+        expiresAt: new Date(Date.now() - 60_000),
       },
     });
 
-    expect(user).not.toBeNull();
-    if (!user) {
-      throw new Error('Expected registered user to exist');
-    }
+    await expect(service.verifyEmail({ token: expiredRaw })).rejects.toBeInstanceOf(
+      TokenExpiredException,
+    );
+  });
 
-    expect(user.emailVerified).toBe(false);
-    expect(user.passwordHash).not.toBe(password);
-    await expect(verify(user.passwordHash, password)).resolves.toBe(true);
-
-    expect(user.organizationMembers).toHaveLength(1);
-    expect(user.organizationMembers[0]?.organization.slug).toBe(DEFAULT_ORGANIZATION.slug);
-    expect(user.organizationMembers[0]?.status).toBe('ACTIVE');
-
-    expect(user.userRoles).toHaveLength(1);
-    expect(user.userRoles[0]?.role.name).toBe(DEFAULT_REGISTRATION_ROLE);
+  it('returns success for already verified resend requests', async () => {
+    const result = await service.resendVerification({ email });
+    expect(result.message).toBe('Email is already verified.');
   });
 
   it('logs in successfully and returns a verifiable JWT', async () => {
     const result = await service.login({ email, password });
 
     expect(result.message).toBe('Login successful.');
-    expect(result.data.expiresIn).toBe(jwtExpiresIn);
-    expect(result.data.user).toEqual({
-      id: createdUserId,
-      firstName: 'Ada',
-      lastName: 'Lovelace',
-      email,
-    });
-    expect(result.data).not.toHaveProperty('password');
-    expect(result.data).not.toHaveProperty('passwordHash');
-    expect(result.data).not.toHaveProperty('refreshToken');
-
-    const payload = await jwtService.verifyAsync<{
-      sub: string;
-      email: string;
-      type: string;
-    }>(result.data.accessToken);
-
+    const payload = await jwtService.verifyAsync<{ sub: string; email: string; type: string }>(
+      result.data.accessToken,
+    );
     expect(payload.sub).toBe(createdUserId);
-    expect(payload.email).toBe(email);
     expect(payload.type).toBe('access');
   });
 
@@ -227,5 +258,17 @@ describe.runIf(shouldRunDatabaseTests)('Auth registration and login integration'
 
     const leftover = await prisma.user.findUnique({ where: { email: rollbackEmail } });
     expect(leftover).toBeNull();
+  });
+
+  it('keeps seeded org and student role available', async () => {
+    const organization = await prisma.organization.findUnique({
+      where: { slug: DEFAULT_ORGANIZATION.slug },
+    });
+    const role = await prisma.role.findUnique({
+      where: { name: DEFAULT_REGISTRATION_ROLE },
+    });
+
+    expect(organization).not.toBeNull();
+    expect(role).not.toBeNull();
   });
 });

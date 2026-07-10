@@ -5,33 +5,21 @@ Authentication architecture for the Graphology API.
 ## Implemented
 
 - **User registration** — `POST /api/v1/auth/register`
-  - Argon2 password hashing (plaintext never persisted)
-  - Unique email / optional unique phone
-  - Default organization membership (`Graphology Academy`)
-  - Default RBAC role (`Student`) via name lookup
-  - Single Prisma transaction for user + membership + role
-- **User login** — `POST /api/v1/auth/login`
-  - Argon2 password verification with timing-safe dummy hash for unknown emails
-  - Uniform `InvalidCredentialsException` for unknown email / wrong password
-  - Rejects inactive and soft-deleted accounts via `AccountDisabledException`
-  - Access token only (`JWT_SECRET` + `JWT_EXPIRES_IN` via ConfigModule)
+- **User login** — `POST /api/v1/auth/login` (access token only)
+- **Email verification** — `GET /api/v1/auth/verify-email?token=...`
+- **Resend verification** — `POST /api/v1/auth/resend-verification`
+
+### Email verification details
+
+- Cryptographically secure raw token sent by email
+- Only SHA-256 token hash stored (`email_verification_tokens`)
+- 24-hour expiry
+- Email delivery via provider-agnostic `EmailService` (`ResendEmailService` implementation)
+- Registration is not rolled back if email sending fails (failure is logged)
 
 ## Not implemented yet
 
-Refresh tokens, cookies, OAuth, password reset, email verification, and RBAC enforcement.
-
-## Responsibilities
-
-| Layer | Responsibility |
-| --- | --- |
-| **Controllers** | HTTP surface for auth routes (`/api/v1/auth/*`). |
-| **Services** | Application use-cases. Depend on repository interfaces, never Prisma. Hash/verify passwords; issue access tokens via `TokenService`. |
-| **Repositories** | Persistence adapters. `PrismaAuthRepository` / `PrismaUserRepository` implement interfaces. |
-| **Interfaces** | Contracts (`AuthRepository`, `UserRepository`) so services stay DB-agnostic. |
-| **DTOs** | Request validation (`RegisterDto`, `LoginDto`, placeholders for reset/etc.). |
-| **Entities / Types / Mappers** | Domain and API shapes. |
-| **Guards / Strategies / Decorators** | Placeholders for JWT guards and RBAC. |
-| **Constants / Exceptions** | Shared names and typed errors. |
+Refresh tokens, cookies, OAuth, password reset, and RBAC enforcement.
 
 ## Dependency flow
 
@@ -39,13 +27,10 @@ Refresh tokens, cookies, OAuth, password reset, email verification, and RBAC enf
 HTTP (AuthController)
         │
         ▼
-   AuthService  (argon2 hash/verify)
+   AuthService
         │
-        ├── UserRepository  ──► PrismaUserRepository ──► PrismaClient
-        ├── AuthRepository  ──► PrismaAuthRepository ──► PrismaClient ($transaction)
-        └── TokenService    ──► JwtService (ConfigModule: JWT_SECRET, JWT_EXPIRES_IN)
+        ├── UserRepository  ──► PrismaUserRepository
+        ├── AuthRepository  ──► PrismaAuthRepository  (users + verification tokens)
+        ├── TokenService    ──► JwtService
+        └── EmailService    ──► ResendEmailService
 ```
-
-- `DatabaseModule` provides `PRISMA_CLIENT` globally.
-- `AuthModule` binds repository tokens and registers `JwtModule` asynchronously from env.
-- Services inject tokens, not concrete Prisma types.

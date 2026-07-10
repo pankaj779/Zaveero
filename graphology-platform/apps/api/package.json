@@ -29,6 +29,7 @@
     "compression": "^1.8.1",
     "helmet": "^8.2.0",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.17.2",
     "rxjs": "^7.8.2",
     "zod": "^3.25.56"
   },
